@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -131,7 +132,7 @@ func TestHandler_GetProfile(t *testing.T) {
 	// including database errors that should be 500.
 	t.Run("404 if ErrUserNotFound", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Me", "ghost").Return((*MeResponse)(nil), ErrUserNotFound)
+		svc.On("Me", "ghost").Return((*MeResponse)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "ghost")
 		resp := doRequest(app, http.MethodGet, "/v1/users/me", nil)
@@ -308,7 +309,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 
 	t.Run("404 if user not found", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("ChangePassword", "user-123", mock.Anything).Return(ErrUserNotFound)
+		svc.On("ChangePassword", "user-123", mock.Anything).Return(apperr.ErrNotFound)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/password", validReq)
@@ -476,7 +477,7 @@ func TestHandler_FindByID(t *testing.T) {
 
 	t.Run("404 user not found", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("FindUserByID", &GetUserURI{ID: "ghost"}).Return((*User)(nil), ErrUserNotFound)
+		svc.On("FindUserByID", &GetUserURI{ID: "ghost"}).Return((*User)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/ghost", nil)

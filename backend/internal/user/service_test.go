@@ -3,6 +3,7 @@ package user_test
 import (
 	"errors"
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"sync"
 	"testing"
 	"time"
@@ -124,13 +125,13 @@ func TestService_Me(t *testing.T) {
 
 	t.Run("propagates error if user not found", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindByID", "ghost").Return((*User)(nil), ErrUserNotFound)
+		repo.On("FindByID", "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
 		svc := newTestService(repo)
 		res, err := svc.Me("ghost")
 
 		assert.Nil(t, res)
-		assert.ErrorIs(t, err, ErrUserNotFound)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 		repo.AssertExpectations(t)
 	})
 
@@ -217,13 +218,13 @@ func TestService_UpdateProfile(t *testing.T) {
 
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindByID", "ghost").Return((*User)(nil), ErrUserNotFound)
+		repo.On("FindByID", "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
 		svc := newTestService(repo)
 		res, err := svc.UpdateProfile("ghost", &UpdateProfileRequest{Name: "X"})
 
 		assert.Nil(t, res)
-		assert.ErrorIs(t, err, ErrUserNotFound)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 		repo.AssertNotCalled(t, "UpdateProfile")
 	})
 
@@ -278,12 +279,12 @@ func TestService_UpdateEmail(t *testing.T) {
 
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindByID", "ghost").Return((*User)(nil), ErrUserNotFound)
+		repo.On("FindByID", "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
 		svc := newTestService(repo)
 		_, err := svc.UpdateEmail("ghost", &UpdateEmailRequest{CurrentPassword: "any"})
 
-		assert.ErrorIs(t, err, ErrUserNotFound)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 
 	t.Run("repository.UpdateEmail fails → propagate error", func(t *testing.T) {
@@ -377,7 +378,7 @@ func TestService_ChangePassword(t *testing.T) {
 
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindByID", "ghost").Return((*User)(nil), ErrUserNotFound)
+		repo.On("FindByID", "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
 		svc := newTestService(repo)
 		err := svc.ChangePassword("ghost", &ChangePasswordRequest{
@@ -386,7 +387,7 @@ func TestService_ChangePassword(t *testing.T) {
 			ConfirmPassword: "any",
 		})
 
-		assert.ErrorIs(t, err, ErrUserNotFound)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 		repo.AssertNotCalled(t, "UpdatePassword")
 	})
 
@@ -424,7 +425,7 @@ func TestService_DeleteAccount(t *testing.T) {
 
 	// BUG DOCUMENTED: Repository.DeleteByID does not check rows affected.
 	// If user does not exist, DELETE query won't error — silent no-op.
-	// Should return ErrUserNotFound. This test documents current behavior.
+	// Should return apperr.ErrNotFound. This test documents current behavior.
 	t.Run("user not found — repository does not return error (silent no-op)", func(t *testing.T) {
 		repo := new(mockRepo)
 		repo.On("DeleteByID", "ghost").Return(nil) // mock simulates current DB behavior
@@ -465,13 +466,13 @@ func TestService_FindUserByID(t *testing.T) {
 
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindByID", "ghost").Return((*User)(nil), ErrUserNotFound)
+		repo.On("FindByID", "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
 		svc := newTestService(repo)
 		res, err := svc.FindUserByID(&GetUserURI{ID: "ghost"})
 
 		assert.Nil(t, res)
-		assert.ErrorIs(t, err, ErrUserNotFound)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 }
 
