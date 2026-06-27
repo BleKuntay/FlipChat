@@ -130,7 +130,7 @@ func (r *Repository) Search(ctx context.Context, userID, q, cursor string, limit
 		query += fmt.Sprintf(` AND u.id > $%d`, len(args))
 	}
 
-	args = append(args, limit+1)
+	args = append(args, limit)
 	query += fmt.Sprintf(` ORDER BY u.id ASC LIMIT $%d`, len(args))
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
