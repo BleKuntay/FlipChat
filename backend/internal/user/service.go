@@ -1,33 +1,41 @@
 package user
 
 import (
+	"context"
+
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 )
 
 type RepositoryInterface interface {
-	FindByID(userID string) (*User, error)
-	UpdateProfile(u *User) (*UpdateProfileResponse, error)
-	UpdateEmail(userID string, req *UpdateEmailRequest) (*MeResponse, error)
-	UpdatePassword(userID, hashedPassword string) error
-	DeleteByID(userID string) error
-	Search(userID, q, cursor string, limit int) ([]*Summary, error)
+	FindByID(ctx context.Context, userID string) (*User, error)
+	UpdateProfile(ctx context.Context, u *User) (*UpdateProfileResponse, error)
+	UpdateEmail(ctx context.Context, userID string, req *UpdateEmailRequest) (*MeResponse, error)
+	UpdatePassword(ctx context.Context, userID, hashedPassword string) error
+	DeleteByID(ctx context.Context, userID string) error
+	Search(ctx context.Context, userID, q, cursor string, limit int) ([]*Summary, error)
+}
+
+type BlockChecker interface {
+	IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error)
 }
 
 type Service struct {
-	repository RepositoryInterface
+	repository   RepositoryInterface
+	blockChecker BlockChecker
 }
 
-func NewService(repository RepositoryInterface) *Service {
-	return &Service{repository: repository}
+func NewService(repository RepositoryInterface, blockChecker BlockChecker) *Service {
+	return &Service{repository: repository, blockChecker: blockChecker}
 }
 
-func (s *Service) Me(userID string) (*MeResponse, error) {
-	user, err := s.repository.FindByID(userID)
+func (s *Service) Me(ctx context.Context, userID string) (*MeResponse, error) {
+	user, err := s.repository.FindByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	me := &MeResponse{
+	return &MeResponse{
 		Response: Response{
 			ID:         user.ID,
 			Name:       user.Name,
@@ -39,13 +47,11 @@ func (s *Service) Me(userID string) (*MeResponse, error) {
 			CreatedAt:  user.CreatedAt,
 		},
 		Email: user.Email,
-	}
-
-	return me, nil
+	}, nil
 }
 
-func (s *Service) UpdateProfile(userID string, request *UpdateProfileRequest) (*UpdateProfileResponse, error) {
-	user, err := s.repository.FindByID(userID)
+func (s *Service) UpdateProfile(ctx context.Context, userID string, request *UpdateProfileRequest) (*UpdateProfileResponse, error) {
+	user, err := s.repository.FindByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -76,16 +82,11 @@ func (s *Service) UpdateProfile(userID string, request *UpdateProfileRequest) (*
 		return nil, ErrUserNotUpdated
 	}
 
-	updatedUser, err := s.repository.UpdateProfile(user)
-	if err != nil {
-		return nil, err
-	}
-
-	return updatedUser, nil
+	return s.repository.UpdateProfile(ctx, user)
 }
 
-func (s *Service) UpdateEmail(userID string, request *UpdateEmailRequest) (*UpdateEmailResponse, error) {
-	user, err := s.repository.FindByID(userID)
+func (s *Service) UpdateEmail(ctx context.Context, userID string, request *UpdateEmailRequest) (*UpdateEmailResponse, error) {
+	user, err := s.repository.FindByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,20 +95,15 @@ func (s *Service) UpdateEmail(userID string, request *UpdateEmailRequest) (*Upda
 		return nil, ErrInvalidPassword
 	}
 
-	me, err := s.repository.UpdateEmail(userID, request)
-	if err != nil {
-		return nil, err
-	}
-
-	return me, nil
+	return s.repository.UpdateEmail(ctx, userID, request)
 }
 
-func (s *Service) ChangePassword(userID string, request *ChangePasswordRequest) error {
+func (s *Service) ChangePassword(ctx context.Context, userID string, request *ChangePasswordRequest) error {
 	if request.NewPassword != request.ConfirmPassword {
 		return ErrPasswordMismatch
 	}
 
-	user, err := s.repository.FindByID(userID)
+	user, err := s.repository.FindByID(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -121,23 +117,31 @@ func (s *Service) ChangePassword(userID string, request *ChangePasswordRequest) 
 		return err
 	}
 
-	return s.repository.UpdatePassword(user.ID, hashedPassword)
+	return s.repository.UpdatePassword(ctx, user.ID, hashedPassword)
 }
 
-func (s *Service) DeleteAccount(userID string) error {
-	return s.repository.DeleteByID(userID)
+func (s *Service) DeleteAccount(ctx context.Context, userID string) error {
+	return s.repository.DeleteByID(ctx, userID)
 }
 
-func (s *Service) FindUserByID(param *GetUserURI) (*User, error) {
-	user, err := s.repository.FindByID(param.ID)
+func (s *Service) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*User, error) {
+	user, err := s.repository.FindByID(ctx, param.ID)
 	if err != nil {
 		return nil, err
+	}
+
+	blocked, err := s.blockChecker.IsBlockedEitherWay(ctx, requesterID, param.ID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, apperr.ErrNotFound
 	}
 
 	return user, nil
 }
 
-func (s *Service) Search(userID string, query *SearchQuery) (*SearchResponse, error) {
+func (s *Service) Search(ctx context.Context, userID string, query *SearchQuery) (*SearchResponse, error) {
 	const defaultLimit = 20
 	const maxLimit = 50
 
@@ -148,15 +152,16 @@ func (s *Service) Search(userID string, query *SearchQuery) (*SearchResponse, er
 		query.Limit = maxLimit
 	}
 
-	summaries, err := s.repository.Search(userID, query.Q, query.Cursor, query.Limit)
+	summaries, err := s.repository.Search(ctx, userID, query.Q, query.Cursor, query.Limit+1)
 	if err != nil {
 		return nil, err
 	}
 
 	var nextCursor *string
-	if len(summaries) == query.Limit {
-		last := summaries[len(summaries)-1]
-		nextCursor = &last.ID
+	if len(summaries) > query.Limit {
+		summaries = summaries[:query.Limit]
+		cursor := summaries[len(summaries)-1].ID
+		nextCursor = &cursor
 	}
 
 	return &SearchResponse{

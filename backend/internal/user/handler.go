@@ -1,19 +1,21 @@
 package user
 
 import (
+	"context"
 	"errors"
-	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+
+	"github.com/BleKuntay/FlipChat/backend/pkg/httputil"
 	"github.com/gofiber/fiber/v3"
 )
 
 type ServiceInterface interface {
-	Me(userID string) (*MeResponse, error)
-	UpdateProfile(userID string, req *UpdateProfileRequest) (*UpdateProfileResponse, error)
-	UpdateEmail(userID string, req *UpdateEmailRequest) (*UpdateEmailResponse, error)
-	ChangePassword(userID string, req *ChangePasswordRequest) error
-	DeleteAccount(userID string) error
-	FindUserByID(param *GetUserURI) (*User, error)
-	Search(userID string, query *SearchQuery) (*SearchResponse, error)
+	Me(ctx context.Context, userID string) (*MeResponse, error)
+	UpdateProfile(ctx context.Context, userID string, req *UpdateProfileRequest) (*UpdateProfileResponse, error)
+	UpdateEmail(ctx context.Context, userID string, req *UpdateEmailRequest) (*UpdateEmailResponse, error)
+	ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error
+	DeleteAccount(ctx context.Context, userID string) error
+	FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*User, error)
+	Search(ctx context.Context, userID string, query *SearchQuery) (*SearchResponse, error)
 }
 
 type Handler struct {
@@ -35,17 +37,19 @@ func (h *Handler) RegisterRoutes(router fiber.Router) {
 }
 
 func (h *Handler) GetProfile(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
-	me, err := h.service.Me(userID)
+	me, err := h.service.Me(ctx, userID)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(me)
 }
 
 func (h *Handler) UpdateProfile(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
 	req := new(UpdateProfileRequest)
@@ -53,15 +57,19 @@ func (h *Handler) UpdateProfile(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.UpdateProfile(userID, req)
+	res, err := h.service.UpdateProfile(ctx, userID, req)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "failed to update profile"})
+		if errors.Is(err, ErrUserNotUpdated) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(res)
 }
 
 func (h *Handler) UpdateEmail(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
 	req := new(UpdateEmailRequest)
@@ -69,15 +77,19 @@ func (h *Handler) UpdateEmail(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.UpdateEmail(userID, req)
+	res, err := h.service.UpdateEmail(ctx, userID, req)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		if errors.Is(err, ErrInvalidPassword) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		}
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(res)
 }
 
 func (h *Handler) ChangePassword(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
 	req := new(ChangePasswordRequest)
@@ -85,36 +97,32 @@ func (h *Handler) ChangePassword(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	if err := h.service.ChangePassword(userID, req); err != nil {
+	if err := h.service.ChangePassword(ctx, userID, req); err != nil {
 		if errors.Is(err, ErrInvalidPassword) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid current password"})
 		}
-
-		if errors.Is(err, apperr.ErrNotFound) {
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
-		}
-
 		if errors.Is(err, ErrPasswordMismatch) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "new password does not match"})
 		}
-
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to change password"})
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(fiber.Map{"message": "password changed successfully"})
 }
 
 func (h *Handler) DeleteAccount(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
-	if err := h.service.DeleteAccount(userID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	if err := h.service.DeleteAccount(ctx, userID); err != nil {
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *Handler) Search(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
 	query := new(SearchQuery)
@@ -122,27 +130,26 @@ func (h *Handler) Search(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.Search(userID, query)
+	res, err := h.service.Search(ctx, userID, query)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(res)
 }
 
 func (h *Handler) FindByID(c fiber.Ctx) error {
+	ctx := c.Context()
+	requesterID := fiber.Locals[string](c, "user_id")
+
 	param := new(GetUserURI)
 	if err := c.Bind().URI(param); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.FindUserByID(param)
+	res, err := h.service.FindUserByID(ctx, requesterID, param)
 	if err != nil {
-		if errors.Is(err, apperr.ErrNotFound) {
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
-		}
-
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(res)

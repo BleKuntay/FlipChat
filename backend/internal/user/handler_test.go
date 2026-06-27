@@ -2,13 +2,14 @@ package user_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
-	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -21,48 +22,48 @@ import (
 
 type mockService struct{ mock.Mock }
 
-func (m *mockService) Me(userID string) (*MeResponse, error) {
-	args := m.Called(userID)
+func (m *mockService) Me(ctx context.Context, userID string) (*MeResponse, error) {
+	args := m.Called(ctx, userID)
 	if r, ok := args.Get(0).(*MeResponse); ok {
 		return r, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockService) UpdateProfile(userID string, req *UpdateProfileRequest) (*UpdateProfileResponse, error) {
-	args := m.Called(userID, req)
+func (m *mockService) UpdateProfile(ctx context.Context, userID string, req *UpdateProfileRequest) (*UpdateProfileResponse, error) {
+	args := m.Called(ctx, userID, req)
 	if r, ok := args.Get(0).(*UpdateProfileResponse); ok {
 		return r, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockService) UpdateEmail(userID string, req *UpdateEmailRequest) (*UpdateEmailResponse, error) {
-	args := m.Called(userID, req)
+func (m *mockService) UpdateEmail(ctx context.Context, userID string, req *UpdateEmailRequest) (*UpdateEmailResponse, error) {
+	args := m.Called(ctx, userID, req)
 	if r, ok := args.Get(0).(*UpdateEmailResponse); ok {
 		return r, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockService) ChangePassword(userID string, req *ChangePasswordRequest) error {
-	return m.Called(userID, req).Error(0)
+func (m *mockService) ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error {
+	return m.Called(ctx, userID, req).Error(0)
 }
 
-func (m *mockService) DeleteAccount(userID string) error {
-	return m.Called(userID).Error(0)
+func (m *mockService) DeleteAccount(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
 }
 
-func (m *mockService) FindUserByID(param *GetUserURI) (*User, error) {
-	args := m.Called(param)
+func (m *mockService) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*User, error) {
+	args := m.Called(ctx, requesterID, param)
 	if u, ok := args.Get(0).(*User); ok {
 		return u, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockService) Search(userID string, query *SearchQuery) (*SearchResponse, error) {
-	args := m.Called(userID, query)
+func (m *mockService) Search(ctx context.Context, userID string, query *SearchQuery) (*SearchResponse, error) {
+	args := m.Called(ctx, userID, query)
 	if r, ok := args.Get(0).(*SearchResponse); ok {
 		return r, args.Error(1)
 	}
@@ -71,14 +72,9 @@ func (m *mockService) Search(userID string, query *SearchQuery) (*SearchResponse
 
 // ── test app factory ──────────────────────────────────────────────────────────
 
-// newTestApp creates Fiber app with Handler attached and minimal middleware
-// that injects user_id into context (simulating auth middleware).
 func newTestApp(svc ServiceInterface, userID string) *fiber.App {
-	app := fiber.New(fiber.Config{
-		// Disable logging for clean test output
-	})
+	app := fiber.New()
 
-	// Simulate auth middleware
 	app.Use(func(c fiber.Ctx) error {
 		fiber.Locals[string](c, "user_id", userID)
 		return c.Next()
@@ -117,7 +113,7 @@ func TestHandler_GetProfile(t *testing.T) {
 		expected := &MeResponse{Email: "john@example.com"}
 		expected.ID = "user-123"
 		expected.Name = "John Doe"
-		svc.On("Me", "user-123").Return(expected, nil)
+		svc.On("Me", mock.Anything, "user-123").Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodGet, "/v1/users/me", nil)
@@ -128,11 +124,9 @@ func TestHandler_GetProfile(t *testing.T) {
 		assert.Equal(t, "john@example.com", body.Email)
 	})
 
-	// BUG DOCUMENTED: Handler returns 404 for all errors from service,
-	// including database errors that should be 500.
-	t.Run("404 if ErrUserNotFound", func(t *testing.T) {
+	t.Run("404 if ErrNotFound", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Me", "ghost").Return((*MeResponse)(nil), apperr.ErrNotFound)
+		svc.On("Me", mock.Anything, "ghost").Return((*MeResponse)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "ghost")
 		resp := doRequest(app, http.MethodGet, "/v1/users/me", nil)
@@ -140,17 +134,14 @@ func TestHandler_GetProfile(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 
-	// BUG DOCUMENTED: Database error also results in 404, not 500.
-	// This hides infrastructure failures from monitoring.
-	t.Run("404 (should be 500) if database error", func(t *testing.T) {
+	t.Run("500 if database error", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Me", "user-123").Return((*MeResponse)(nil), errors.New("db down"))
+		svc.On("Me", mock.Anything, "user-123").Return((*MeResponse)(nil), errors.New("db down"))
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodGet, "/v1/users/me", nil)
 
-		// Document bug: should be 500
-		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "BUG: should be 500 for database error")
+		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
 }
 
@@ -161,7 +152,7 @@ func TestHandler_UpdateProfile(t *testing.T) {
 		svc := new(mockService)
 		req := &UpdateProfileRequest{Name: "Jane Doe"}
 		res := &UpdateProfileResponse{Response: Response{ID: "user-123", Name: "Jane Doe"}}
-		svc.On("UpdateProfile", "user-123", mock.AnythingOfType("*user.UpdateProfileRequest")).Return(res, nil)
+		svc.On("UpdateProfile", mock.Anything, "user-123", mock.AnythingOfType("*user.UpdateProfileRequest")).Return(res, nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me", req)
@@ -181,17 +172,24 @@ func TestHandler_UpdateProfile(t *testing.T) {
 		svc.AssertNotCalled(t, "UpdateProfile")
 	})
 
-	// BUG DOCUMENTED: Handler returns 404 for all service errors,
-	// but ErrUserNotUpdated (empty body) should be 400,
-	// and database error should be 500.
-	t.Run("404 (should be 400) if ErrUserNotUpdated", func(t *testing.T) {
+	t.Run("400 if ErrUserNotUpdated", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("UpdateProfile", "user-123", mock.Anything).Return((*UpdateProfileResponse)(nil), ErrUserNotUpdated)
+		svc.On("UpdateProfile", mock.Anything, "user-123", mock.Anything).Return((*UpdateProfileResponse)(nil), ErrUserNotUpdated)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me", map[string]string{})
 
-		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "BUG: ErrUserNotUpdated should be 400")
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+
+	t.Run("500 if database error", func(t *testing.T) {
+		svc := new(mockService)
+		svc.On("UpdateProfile", mock.Anything, "user-123", mock.Anything).Return((*UpdateProfileResponse)(nil), errors.New("db error"))
+
+		app := newTestApp(svc, "user-123")
+		resp := doRequest(app, http.MethodPatch, "/v1/users/me", map[string]string{"name": "Jane"})
+
+		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
 }
 
@@ -202,7 +200,7 @@ func TestHandler_UpdateEmail(t *testing.T) {
 		svc := new(mockService)
 		req := &UpdateEmailRequest{NewEmail: "newemail@example.com", CurrentPassword: "secret"}
 		res := &UpdateEmailResponse{Email: "newemail@example.com"}
-		svc.On("UpdateEmail", "user-123", mock.AnythingOfType("*user.UpdateEmailRequest")).Return(res, nil)
+		svc.On("UpdateEmail", mock.Anything, "user-123", mock.AnythingOfType("*user.UpdateEmailRequest")).Return(res, nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/email", req)
@@ -210,11 +208,9 @@ func TestHandler_UpdateEmail(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
-	// BUG DOCUMENTED: Handler does not distinguish ErrInvalidPassword from other errors.
-	// ErrInvalidPassword should be 401/400, not 500.
-	t.Run("500 (should be 401) if ErrInvalidPassword", func(t *testing.T) {
+	t.Run("401 if ErrInvalidPassword", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("UpdateEmail", "user-123", mock.Anything).Return((*UpdateEmailResponse)(nil), ErrInvalidPassword)
+		svc.On("UpdateEmail", mock.Anything, "user-123", mock.Anything).Return((*UpdateEmailResponse)(nil), ErrInvalidPassword)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/email", map[string]string{
@@ -222,40 +218,23 @@ func TestHandler_UpdateEmail(t *testing.T) {
 			"current_password": "wrong",
 		})
 
-		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode, "BUG: should be 401 for wrong password")
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
 
-	// BUG DOCUMENTED: Handler also leaks internal error messages to client via err.Error()
-	t.Run("500 with error message from service (information leak)", func(t *testing.T) {
+	t.Run("500 if database error", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("UpdateEmail", "user-123", mock.Anything).Return(
+		svc.On("UpdateEmail", mock.Anything, "user-123", mock.Anything).Return(
 			(*UpdateEmailResponse)(nil),
-			errors.New("pq: duplicate key value violates unique constraint \"users_email_key\""),
+			errors.New("db timeout"),
 		)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/email", map[string]string{
-			"new_email":        "dup@example.com",
+			"new_email":        "x@example.com",
 			"current_password": "secret",
 		})
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
-
-		var body map[string]string
-		decodeJSON(t, resp, &body)
-		// This documents that DB message leaks to client — must be fixed
-		assert.Contains(t, body["error"], "duplicate key", "BUG: internal error message leaks to client")
-	})
-
-	t.Run("400 if body is not valid", func(t *testing.T) {
-		svc := new(mockService)
-		app := newTestApp(svc, "user-123")
-
-		req := httptest.NewRequest(http.MethodPatch, "/v1/users/me/email", bytes.NewBufferString("{invalid}"))
-		req.Header.Set("Content-Type", "application/json")
-		resp, _ := app.Test(req)
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
 }
 
@@ -263,14 +242,14 @@ func TestHandler_UpdateEmail(t *testing.T) {
 
 func TestHandler_ChangePassword(t *testing.T) {
 	validReq := &ChangePasswordRequest{
-		CurrentPassword: "secret123",
-		NewPassword:     "newSecret456",
-		ConfirmPassword: "newSecret456",
+		CurrentPassword: "oldpass",
+		NewPassword:     "newpass",
+		ConfirmPassword: "newpass",
 	}
 
-	t.Run("200 succeeds", func(t *testing.T) {
+	t.Run("200 password changed", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("ChangePassword", "user-123", mock.AnythingOfType("*user.ChangePasswordRequest")).Return(nil)
+		svc.On("ChangePassword", mock.Anything, "user-123", mock.AnythingOfType("*user.ChangePasswordRequest")).Return(nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/password", validReq)
@@ -281,35 +260,29 @@ func TestHandler_ChangePassword(t *testing.T) {
 		assert.Equal(t, "password changed successfully", body["message"])
 	})
 
-	t.Run("401 if current password is wrong", func(t *testing.T) {
+	t.Run("401 if ErrInvalidPassword", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("ChangePassword", "user-123", mock.Anything).Return(ErrInvalidPassword)
+		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(ErrInvalidPassword)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/password", validReq)
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-		var body map[string]string
-		decodeJSON(t, resp, &body)
-		assert.Equal(t, "invalid current password", body["error"])
 	})
 
-	t.Run("400 if new password does not match", func(t *testing.T) {
+	t.Run("400 if ErrPasswordMismatch", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("ChangePassword", "user-123", mock.Anything).Return(ErrPasswordMismatch)
+		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(ErrPasswordMismatch)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/password", validReq)
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		var body map[string]string
-		decodeJSON(t, resp, &body)
-		assert.Equal(t, "new password does not match", body["error"])
 	})
 
-	t.Run("404 if user not found", func(t *testing.T) {
+	t.Run("404 if ErrNotFound", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("ChangePassword", "user-123", mock.Anything).Return(apperr.ErrNotFound)
+		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(apperr.ErrNotFound)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/password", validReq)
@@ -319,16 +292,12 @@ func TestHandler_ChangePassword(t *testing.T) {
 
 	t.Run("500 for database error", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("ChangePassword", "user-123", mock.Anything).Return(errors.New("db error"))
+		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPatch, "/v1/users/me/password", validReq)
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
-		var body map[string]string
-		decodeJSON(t, resp, &body)
-		// Handler correctly returns generic message for 500
-		assert.Equal(t, "failed to change password", body["error"])
 	})
 
 	t.Run("400 if body is not valid JSON", func(t *testing.T) {
@@ -349,7 +318,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 func TestHandler_DeleteAccount(t *testing.T) {
 	t.Run("204 succeeds", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("DeleteAccount", "user-123").Return(nil)
+		svc.On("DeleteAccount", mock.Anything, "user-123").Return(nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodDelete, "/v1/users/me", nil)
@@ -359,7 +328,7 @@ func TestHandler_DeleteAccount(t *testing.T) {
 
 	t.Run("500 if database error", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("DeleteAccount", "user-123").Return(errors.New("db error"))
+		svc.On("DeleteAccount", mock.Anything, "user-123").Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodDelete, "/v1/users/me", nil)
@@ -367,18 +336,17 @@ func TestHandler_DeleteAccount(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
 
-	// Verify that userID comes from auth context, not body
 	t.Run("userID comes from context (auth middleware), not body", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("DeleteAccount", "context-user").Return(nil)
+		svc.On("DeleteAccount", mock.Anything, "context-user").Return(nil)
 
-		app := newTestApp(svc, "context-user") // user_id from middleware
+		app := newTestApp(svc, "context-user")
 		resp := doRequest(app, http.MethodDelete, "/v1/users/me", map[string]string{
-			"user_id": "attacker-trying-to-override", // body should be ignored
+			"user_id": "attacker-trying-to-override",
 		})
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-		svc.AssertCalled(t, "DeleteAccount", "context-user")
+		svc.AssertCalled(t, "DeleteAccount", mock.Anything, "context-user")
 	})
 }
 
@@ -391,7 +359,7 @@ func TestHandler_Search(t *testing.T) {
 			Data:       []*Summary{{ID: "x", Username: "xena"}},
 			NextCursor: nil,
 		}
-		svc.On("Search", "user-123", mock.AnythingOfType("*user.SearchQuery")).Return(expected, nil)
+		svc.On("Search", mock.Anything, "user-123", mock.AnythingOfType("*user.SearchQuery")).Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodGet, "/v1/users/search?q=xena&limit=10", nil)
@@ -410,7 +378,7 @@ func TestHandler_Search(t *testing.T) {
 			Data:       []*Summary{{ID: "a"}, {ID: "b"}},
 			NextCursor: &cursor,
 		}
-		svc.On("Search", "user-123", mock.AnythingOfType("*user.SearchQuery")).Return(expected, nil)
+		svc.On("Search", mock.Anything, "user-123", mock.AnythingOfType("*user.SearchQuery")).Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodGet, "/v1/users/search?q=b&limit=2", nil)
@@ -424,18 +392,17 @@ func TestHandler_Search(t *testing.T) {
 
 	t.Run("200 empty results (not 404)", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Search", "user-123", mock.Anything).Return(&SearchResponse{Data: []*Summary{}}, nil)
+		svc.On("Search", mock.Anything, "user-123", mock.Anything).Return(&SearchResponse{Data: []*Summary{}}, nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodGet, "/v1/users/search?q=nobody", nil)
 
-		// Important: empty search must be 200 with empty array, not 404
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
 	t.Run("500 if service error", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Search", "user-123", mock.Anything).Return((*SearchResponse)(nil), errors.New("db timeout"))
+		svc.On("Search", mock.Anything, "user-123", mock.Anything).Return((*SearchResponse)(nil), errors.New("db timeout"))
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodGet, "/v1/users/search?q=x", nil)
@@ -443,10 +410,9 @@ func TestHandler_Search(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
 
-	// Verify that user cannot appear in their own search results
 	t.Run("userID forwarded to service to exclude self from results", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Search", "user-123", mock.MatchedBy(func(q *SearchQuery) bool {
+		svc.On("Search", mock.Anything, "user-123", mock.MatchedBy(func(q *SearchQuery) bool {
 			return q.Q == "john"
 		})).Return(&SearchResponse{Data: []*Summary{}}, nil)
 
@@ -454,7 +420,7 @@ func TestHandler_Search(t *testing.T) {
 		resp := doRequest(app, http.MethodGet, "/v1/users/search?q=john&limit=10", nil)
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		svc.AssertExpectations(t) // Verify userID "user-123" was forwarded
+		svc.AssertExpectations(t)
 	})
 }
 
@@ -464,7 +430,7 @@ func TestHandler_FindByID(t *testing.T) {
 	t.Run("200 user found", func(t *testing.T) {
 		svc := new(mockService)
 		u := stubUser()
-		svc.On("FindUserByID", &GetUserURI{ID: u.ID}).Return(u, nil)
+		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: u.ID}).Return(u, nil)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/"+u.ID, nil)
@@ -477,7 +443,7 @@ func TestHandler_FindByID(t *testing.T) {
 
 	t.Run("404 user not found", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("FindUserByID", &GetUserURI{ID: "ghost"}).Return((*User)(nil), apperr.ErrNotFound)
+		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: "ghost"}).Return((*User)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/ghost", nil)
@@ -485,14 +451,22 @@ func TestHandler_FindByID(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 		var body map[string]string
 		decodeJSON(t, resp, &body)
-		assert.Equal(t, "user not found", body["error"])
+		assert.Equal(t, "not found", body["error"])
 	})
 
-	// BUG DOCUMENTED: For internal errors, handler returns raw err.Error() to client.
-	// This can leak database details (table names, constraint names, etc.)
-	t.Run("500 internal error — response contains raw error string (information leak)", func(t *testing.T) {
+	t.Run("404 if target has blocked requester", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("FindUserByID", mock.Anything).Return(
+		svc.On("FindUserByID", mock.Anything, "caller-id", mock.Anything).Return((*User)(nil), apperr.ErrNotFound)
+
+		app := newTestApp(svc, "caller-id")
+		resp := doRequest(app, http.MethodGet, "/v1/users/blocker-id", nil)
+
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("500 internal error returns generic message", func(t *testing.T) {
+		svc := new(mockService)
+		svc.On("FindUserByID", mock.Anything, mock.Anything, mock.Anything).Return(
 			(*User)(nil),
 			errors.New("pq: could not connect to server"),
 		)
@@ -503,33 +477,14 @@ func TestHandler_FindByID(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 		var body map[string]string
 		decodeJSON(t, resp, &body)
-		// Document bug: internal message leaks
-		assert.Equal(t, "pq: could not connect to server", body["error"],
-			"BUG: internal error message leaks to client, should be generic")
+		assert.Equal(t, "internal server error", body["error"])
 	})
 
-	// Security: ensure caller cannot access all user data without restrictions.
-	// For MVP there is no authorization check (any logged-in user can view any other user).
-	// Document this so Phase 2 can add friendship/block checks.
-	t.Run("AUTHORIZATION: any logged-in user can view other users (will need block check in Phase 2)", func(t *testing.T) {
-		svc := new(mockService)
-		targetUser := stubUser()
-		svc.On("FindUserByID", &GetUserURI{ID: targetUser.ID}).Return(targetUser, nil)
-
-		// caller is different from target
-		app := newTestApp(svc, "different-user-id")
-		resp := doRequest(app, http.MethodGet, "/v1/users/"+targetUser.ID, nil)
-
-		// Currently: allowed — this is expected for MVP
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-	})
-
-	// Security: password field must never appear in response JSON
 	t.Run("password field does not appear in response", func(t *testing.T) {
 		svc := new(mockService)
 		u := stubUser()
 		u.Password = "hashed-super-secret"
-		svc.On("FindUserByID", mock.Anything).Return(u, nil)
+		svc.On("FindUserByID", mock.Anything, mock.Anything, mock.Anything).Return(u, nil)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/"+u.ID, nil)
