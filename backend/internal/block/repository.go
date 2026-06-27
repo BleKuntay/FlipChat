@@ -66,20 +66,21 @@ func (r *Repository) UnblockUser(ctx context.Context, request Request) error {
 
 func (r *Repository) GetBlockList(ctx context.Context, blockerID string, query ListQuery) ([]BlockedSummary, error) {
 	q := `
-		SELECT
-			b.blocked_id AS user_id,
-			u.name,
-			u.username,
-			u.avatar_url
-		FROM blocks b
-		JOIN users u ON b.blocked_id = u.id
-		WHERE blocker_id = $1 AND ($2 = '' OR u.id > $2)
+        SELECT
+            b.blocked_id AS user_id,
+            u.name,
+            u.username,
+            u.avatar_url
+        FROM blocks b
+        JOIN users u ON b.blocked_id = u.id
+        WHERE blocker_id = $1 AND ($2::text IS NULL OR u.id > $2::text)
 		ORDER BY u.id
 		LIMIT $3
-	`
+    `
 
+	cursor := stringToNullable(query.Cursor)
 	var records []BlockedSummary
-	if err := r.ext.SelectContext(ctx, &records, q, blockerID, query.Cursor, query.Limit+1); err != nil {
+	if err := r.ext.SelectContext(ctx, &records, q, blockerID, cursor, query.Limit); err != nil {
 		return nil, err
 	}
 
@@ -101,4 +102,12 @@ func (r *Repository) IsBlockedEitherWay(ctx context.Context, a, b string) (bool,
 	}
 
 	return exists, nil
+}
+
+func stringToNullable(s string) *string {
+	if s == "" {
+		return nil
+	}
+
+	return &s
 }
