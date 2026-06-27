@@ -2,6 +2,7 @@ package friend
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -10,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// userA < userB dijamin dengan string comparison
-// sehingga canonical(userA, userB) selalu return (userA, userB)
 const (
 	userA = "00000000-0000-0000-0000-000000000001"
 	userB = "00000000-0000-0000-0000-000000000002"
@@ -26,8 +25,7 @@ type mockRepo struct {
 	findAllFn         func(ctx context.Context, userID string, query ListQuery) ([]Response, error)
 	existsByUserIDFn  func(ctx context.Context, userID string) (bool, error)
 	findByPairFn      func(ctx context.Context, lowID, highID string) (*Friend, error)
-	addFriendFn       func(ctx context.Context, lowID, highID, requesterID string) (*Record, error)
-	acceptFriendFn    func(ctx context.Context, lowID, highID string) (*Record, error)
+	upsertFriendFn    func(ctx context.Context, lowID, highID, requesterID string) (*Record, error)
 	deleteByPairFn    func(ctx context.Context, lowID, highID string) error
 }
 
@@ -49,28 +47,21 @@ func (m *mockRepo) ExistsByUserID(ctx context.Context, userID string) (bool, err
 	if m.existsByUserIDFn != nil {
 		return m.existsByUserIDFn(ctx, userID)
 	}
-	return true, nil // default: user ada
+	return true, nil
 }
 
 func (m *mockRepo) FindByPair(ctx context.Context, lowID, highID string) (*Friend, error) {
 	if m.findByPairFn != nil {
 		return m.findByPairFn(ctx, lowID, highID)
 	}
-	return nil, nil // default: tidak ada pair
+	return nil, nil
 }
 
-func (m *mockRepo) AddFriend(ctx context.Context, lowID, highID, requesterID string) (*Record, error) {
-	if m.addFriendFn != nil {
-		return m.addFriendFn(ctx, lowID, highID, requesterID)
+func (m *mockRepo) UpsertFriend(ctx context.Context, lowID, highID, requesterID string) (*Record, error) {
+	if m.upsertFriendFn != nil {
+		return m.upsertFriendFn(ctx, lowID, highID, requesterID)
 	}
-	return &Record{UserID: userB, Username: "bob", FullName: "Bob", CreatedAt: time.Now()}, nil
-}
-
-func (m *mockRepo) AcceptFriend(ctx context.Context, lowID, highID string) (*Record, error) {
-	if m.acceptFriendFn != nil {
-		return m.acceptFriendFn(ctx, lowID, highID)
-	}
-	return &Record{UserID: userA, Username: "alice", FullName: "Alice", CreatedAt: time.Now()}, nil
+	return &Record{UserID: userB, Username: "bob", FullName: "Bob", CreatedAt: time.Now(), Status: StatusPending}, nil
 }
 
 func (m *mockRepo) DeleteByPair(ctx context.Context, lowID, highID string) error {
@@ -82,6 +73,25 @@ func (m *mockRepo) DeleteByPair(ctx context.Context, lowID, highID string) error
 
 func newMockRepo() *mockRepo {
 	return &mockRepo{}
+}
+
+// ------------------------------------------------------------------ //
+// Mock BlockChecker                                                     //
+// ------------------------------------------------------------------ //
+
+type mockBlockChecker struct {
+	isBlockedEitherWayFn func(ctx context.Context, a, b string) (bool, error)
+}
+
+func (m *mockBlockChecker) IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error) {
+	if m.isBlockedEitherWayFn != nil {
+		return m.isBlockedEitherWayFn(ctx, a, b)
+	}
+	return false, nil
+}
+
+func newMockBlockChecker() *mockBlockChecker {
+	return &mockBlockChecker{}
 }
 
 // ------------------------------------------------------------------ //
@@ -97,7 +107,7 @@ func TestService_FindOne(t *testing.T) {
 		wantStatus Status
 	}{
 		{
-			name:       "tidak ada relasi returns none",
+			name:       "no relation returns none",
 			wantStatus: StatusNone,
 		},
 		{
@@ -110,7 +120,7 @@ func TestService_FindOne(t *testing.T) {
 			wantStatus: StatusAccepted,
 		},
 		{
-			name: "pending dan userA adalah requester returns pending_sent",
+			name: "pending and userA is requester returns pending_sent",
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
 					return &Friend{RequesterID: userA, Status: StatusPending}, nil
@@ -119,7 +129,7 @@ func TestService_FindOne(t *testing.T) {
 			wantStatus: StatusPendingSent,
 		},
 		{
-			name: "pending dan userB adalah requester returns pending_received",
+			name: "pending and userB is requester returns pending_received",
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
 					return &Friend{RequesterID: userB, Status: StatusPending}, nil
@@ -135,7 +145,7 @@ func TestService_FindOne(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewService(repo)
+			svc := NewService(repo, newMockBlockChecker())
 
 			got, err := svc.FindOne(ctx, userA, userB)
 
@@ -150,12 +160,13 @@ func TestService_AddFriend(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name      string
-		userID    string
-		targetID  string
-		setupRepo func(*mockRepo)
-		wantErr   error
-		wantDir   string
+		name          string
+		userID        string
+		targetID      string
+		setupRepo     func(*mockRepo)
+		setupBlocker  func(*mockBlockChecker)
+		wantErr       error
+		wantDirection string
 	}{
 		{
 			name:     "self-add returns ErrBadRequest",
@@ -164,7 +175,7 @@ func TestService_AddFriend(t *testing.T) {
 			wantErr:  apperr.ErrBadRequest,
 		},
 		{
-			name:     "target tidak ditemukan returns ErrNotFound",
+			name:     "target not found returns ErrNotFound",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
@@ -175,45 +186,78 @@ func TestService_AddFriend(t *testing.T) {
 			wantErr: apperr.ErrNotFound,
 		},
 		{
-			name:     "sudah berteman returns ErrConflict",
+			name:     "blocked returns ErrForbidden",
+			userID:   userA,
+			targetID: userB,
+			setupBlocker: func(m *mockBlockChecker) {
+				m.isBlockedEitherWayFn = func(_ context.Context, _, _ string) (bool, error) {
+					return true, nil
+				}
+			},
+			wantErr: apperr.ErrForbidden,
+		},
+		{
+			name:     "already friends returns ErrConflict",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
 					return &Friend{RequesterID: userA, Status: StatusAccepted}, nil
 				}
+				m.upsertFriendFn = func(_ context.Context, _, _, _ string) (*Record, error) {
+					return nil, sql.ErrNoRows
+				}
 			},
 			wantErr: apperr.ErrConflict,
 		},
 		{
-			name:     "sudah kirim request returns ErrConflict",
+			name:     "already sent request returns ErrConflict",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
-					// A sudah kirim request sebelumnya
 					return &Friend{RequesterID: userA, Status: StatusPending}, nil
 				}
+				m.upsertFriendFn = func(_ context.Context, _, _, _ string) (*Record, error) {
+					return nil, sql.ErrNoRows
+				}
 			},
 			wantErr: apperr.ErrConflict,
 		},
 		{
-			name:     "mutual request auto-accept",
+			name:     "upsert returns conflict (sql.ErrNoRows)",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
-				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
-					// B sudah kirim request ke A sebelumnya
-					return &Friend{RequesterID: userB, Status: StatusPending}, nil
+				m.upsertFriendFn = func(_ context.Context, _, _, _ string) (*Record, error) {
+					return nil, sql.ErrNoRows
 				}
 			},
-			wantDir: "sent",
+			wantErr: apperr.ErrConflict,
 		},
 		{
-			name:     "happy path returns PendingResponse direction sent",
-			userID:   userA,
-			targetID: userB,
-			wantDir:  "sent",
+			name:          "happy path returns direction sent",
+			userID:        userA,
+			targetID:      userB,
+			wantDirection: "sent",
+		},
+		{
+			name:          "mutual request auto-accepts",
+			userID:        userA,
+			targetID:      userB,
+			wantDirection: "accepted",
+			setupRepo: func(m *mockRepo) {
+				m.upsertFriendFn = func(_ context.Context, _, _, _ string) (*Record, error) {
+					return &Record{
+						UserID:      userB,
+						Username:    "bob",
+						FullName:    "Bob",
+						CreatedAt:   time.Now(),
+						RequesterID: userA,
+						Status:      StatusAccepted,
+					}, nil
+				}
+			},
 		},
 	}
 
@@ -223,7 +267,11 @@ func TestService_AddFriend(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewService(repo)
+			blocker := newMockBlockChecker()
+			if tt.setupBlocker != nil {
+				tt.setupBlocker(blocker)
+			}
+			svc := NewService(repo, blocker)
 
 			got, err := svc.AddFriend(ctx, tt.userID, tt.targetID)
 
@@ -235,7 +283,7 @@ func TestService_AddFriend(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, got)
-			assert.Equal(t, tt.wantDir, got.Direction)
+			assert.Equal(t, tt.wantDirection, got.Direction)
 		})
 	}
 }
@@ -257,13 +305,13 @@ func TestService_Unfriend(t *testing.T) {
 			wantErr:  apperr.ErrBadRequest,
 		},
 		{
-			name:     "pair tidak ada returns ErrNotFound",
+			name:     "pair not found returns ErrNotFound",
 			userID:   userA,
 			targetID: userB,
 			wantErr:  apperr.ErrNotFound,
 		},
 		{
-			name:     "status masih pending returns ErrNotFound",
+			name:     "status still pending returns ErrNotFound",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
@@ -291,7 +339,7 @@ func TestService_Unfriend(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewService(repo)
+			svc := NewService(repo, newMockBlockChecker())
 
 			err := svc.Unfriend(ctx, tt.userID, tt.targetID)
 
@@ -321,13 +369,13 @@ func TestService_CancelFriendRequest(t *testing.T) {
 			wantErr:  apperr.ErrBadRequest,
 		},
 		{
-			name:     "pair tidak ada returns ErrNotFound",
+			name:     "pair not found returns ErrNotFound",
 			userID:   userA,
 			targetID: userB,
 			wantErr:  apperr.ErrNotFound,
 		},
 		{
-			name:     "sudah accepted returns ErrConflict",
+			name:     "already accepted returns ErrConflict",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
@@ -338,12 +386,11 @@ func TestService_CancelFriendRequest(t *testing.T) {
 			wantErr: apperr.ErrConflict,
 		},
 		{
-			name:     "bukan requester returns ErrForbidden",
+			name:     "not requester returns ErrForbidden",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
-					// B yang kirim request, bukan A
 					return &Friend{RequesterID: userB, Status: StatusPending}, nil
 				}
 			},
@@ -367,7 +414,7 @@ func TestService_CancelFriendRequest(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewService(repo)
+			svc := NewService(repo, newMockBlockChecker())
 
 			err := svc.CancelFriendRequest(ctx, tt.userID, tt.targetID)
 
@@ -397,13 +444,13 @@ func TestService_AcceptFriendRequest(t *testing.T) {
 			wantErr:  apperr.ErrBadRequest,
 		},
 		{
-			name:     "pair tidak ada returns ErrNotFound",
+			name:     "pair not found returns ErrNotFound",
 			userID:   userB,
 			targetID: userA,
 			wantErr:  apperr.ErrNotFound,
 		},
 		{
-			name:     "sudah accepted returns ErrConflict",
+			name:     "already accepted returns ErrConflict",
 			userID:   userB,
 			targetID: userA,
 			setupRepo: func(m *mockRepo) {
@@ -414,7 +461,7 @@ func TestService_AcceptFriendRequest(t *testing.T) {
 			wantErr: apperr.ErrConflict,
 		},
 		{
-			name:     "requester mencoba accept request-nya sendiri returns ErrForbidden",
+			name:     "requester tries to accept own request returns ErrForbidden",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
@@ -426,7 +473,7 @@ func TestService_AcceptFriendRequest(t *testing.T) {
 		},
 		{
 			name:     "happy path returns Response",
-			userID:   userB, // B menerima request dari A
+			userID:   userB,
 			targetID: userA,
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
@@ -442,7 +489,7 @@ func TestService_AcceptFriendRequest(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewService(repo)
+			svc := NewService(repo, newMockBlockChecker())
 
 			got, err := svc.AcceptFriendRequest(ctx, tt.userID, tt.targetID)
 
@@ -475,13 +522,13 @@ func TestService_DeclineFriendRequest(t *testing.T) {
 			wantErr:  apperr.ErrBadRequest,
 		},
 		{
-			name:     "pair tidak ada returns ErrNotFound",
+			name:     "pair not found returns ErrNotFound",
 			userID:   userB,
 			targetID: userA,
 			wantErr:  apperr.ErrNotFound,
 		},
 		{
-			name:     "status bukan pending returns ErrNotFound",
+			name:     "status not pending returns ErrNotFound",
 			userID:   userB,
 			targetID: userA,
 			setupRepo: func(m *mockRepo) {
@@ -492,7 +539,7 @@ func TestService_DeclineFriendRequest(t *testing.T) {
 			wantErr: apperr.ErrNotFound,
 		},
 		{
-			name:     "requester mencoba decline request-nya sendiri returns ErrForbidden",
+			name:     "requester tries to decline own request returns ErrForbidden",
 			userID:   userA,
 			targetID: userB,
 			setupRepo: func(m *mockRepo) {
@@ -504,7 +551,7 @@ func TestService_DeclineFriendRequest(t *testing.T) {
 		},
 		{
 			name:     "happy path returns nil",
-			userID:   userB, // B menolak request dari A
+			userID:   userB,
 			targetID: userA,
 			setupRepo: func(m *mockRepo) {
 				m.findByPairFn = func(_ context.Context, _, _ string) (*Friend, error) {
@@ -520,7 +567,7 @@ func TestService_DeclineFriendRequest(t *testing.T) {
 			if tt.setupRepo != nil {
 				tt.setupRepo(repo)
 			}
-			svc := NewService(repo)
+			svc := NewService(repo, newMockBlockChecker())
 
 			err := svc.DeclineFriendRequest(ctx, tt.userID, tt.targetID)
 
