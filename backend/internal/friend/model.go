@@ -61,7 +61,7 @@ type RequestListQuery struct {
 type Response struct {
 	UserID      string    `db:"user_id"      json:"user_id"`
 	Username    string    `db:"username"     json:"username"`
-	FullName    string    `db:"name"         json:"full_name" `
+	FullName    string    `db:"name"         json:"full_name"`
 	FriendSince time.Time `db:"friend_since" json:"friend_since"`
 }
 
@@ -70,6 +70,7 @@ type PendingResponse struct {
 	Username  string    `json:"username"`
 	FullName  string    `json:"full_name"`
 	Direction string    `json:"direction"` // "sent" | "received"
+	Status    Status    `json:"status"`    // "pending" | "accepted"
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -98,7 +99,8 @@ type RequestListResponse struct {
 type Record struct {
 	UserID      string    `db:"user_id"`
 	Username    string    `db:"username"`
-	FullName    string    `db:"name" json:"full_name" `
+	FullName    string    `db:"name"`
 	CreatedAt   time.Time `db:"created_at"`
 	RequesterID string    `db:"requester_id"`
+	Status      Status    `db:"status"`
 }

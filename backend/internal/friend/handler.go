@@ -2,9 +2,8 @@ package friend
 
 import (
 	"context"
-	"errors"
 
-	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+	"github.com/BleKuntay/FlipChat/backend/pkg/httputil"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -49,7 +48,7 @@ func (h *Handler) ListRequests(c fiber.Ctx) error {
 
 	response, err := h.service.FindAllRequests(ctx, userID, *query)
 	if err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(response)
@@ -66,7 +65,7 @@ func (h *Handler) FindAll(c fiber.Ctx) error {
 
 	response, err := h.service.FindAll(ctx, userID, *query)
 	if err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(response)
@@ -83,7 +82,7 @@ func (h *Handler) FindOne(c fiber.Ctx) error {
 
 	response, err := h.service.FindOne(ctx, userID, uri.ID)
 	if err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(response)
@@ -100,7 +99,7 @@ func (h *Handler) AddFriend(c fiber.Ctx) error {
 
 	response, err := h.service.AddFriend(ctx, userID, uri.ID)
 	if err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(response)
@@ -116,7 +115,7 @@ func (h *Handler) Unfriend(c fiber.Ctx) error {
 	}
 
 	if err := h.service.Unfriend(ctx, userID, uri.ID); err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -132,7 +131,7 @@ func (h *Handler) CancelFriendRequest(c fiber.Ctx) error {
 	}
 
 	if err := h.service.CancelFriendRequest(ctx, userID, uri.ID); err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -149,7 +148,7 @@ func (h *Handler) AcceptFriendRequest(c fiber.Ctx) error {
 
 	response, err := h.service.AcceptFriendRequest(ctx, userID, uri.ID)
 	if err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.JSON(response)
@@ -165,25 +164,8 @@ func (h *Handler) DeclineFriendRequest(c fiber.Ctx) error {
 	}
 
 	if err := h.service.DeclineFriendRequest(ctx, userID, uri.ID); err != nil {
-		return errStatus(c, err)
+		return httputil.ErrorStatus(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
-}
-
-// errStatus memetakan apperr ke HTTP status code yang sesuai.
-// TODO: pindahkan ke pkg/httputil ketika package lain butuh pattern yang sama.
-func errStatus(c fiber.Ctx, err error) error {
-	switch {
-	case errors.Is(err, apperr.ErrNotFound):
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
-	case errors.Is(err, apperr.ErrConflict):
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
-	case errors.Is(err, apperr.ErrForbidden):
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
-	case errors.Is(err, apperr.ErrBadRequest):
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
-	default:
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
-	}
 }

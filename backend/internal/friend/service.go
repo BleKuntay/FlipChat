@@ -2,6 +2,8 @@ package friend
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 )
@@ -13,17 +15,24 @@ type RepositoryInterface interface {
 	FindAll(ctx context.Context, userID string, query ListQuery) ([]Response, error)
 	ExistsByUserID(ctx context.Context, userID string) (bool, error)
 	FindByPair(ctx context.Context, lowID, highID string) (*Friend, error)
-	AddFriend(ctx context.Context, lowID, highID, requesterID string) (*Record, error)
-	AcceptFriend(ctx context.Context, lowID, highID string) (*Record, error)
+	UpsertFriend(ctx context.Context, lowID, highID, requesterID string) (*Record, error)
 	DeleteByPair(ctx context.Context, lowID, highID string) error
 }
 
-type Service struct {
-	repository RepositoryInterface
+type BlockChecker interface {
+	IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error)
 }
 
-func NewService(repository RepositoryInterface) *Service {
-	return &Service{repository: repository}
+type Service struct {
+	repository   RepositoryInterface
+	blockChecker BlockChecker
+}
+
+func NewService(repository RepositoryInterface, blockChecker BlockChecker) *Service {
+	return &Service{
+		repository:   repository,
+		blockChecker: blockChecker,
+	}
 }
 
 func (s *Service) FindAllRequests(ctx context.Context, userID string, query RequestListQuery) (*RequestListResponse, error) {
@@ -38,8 +47,9 @@ func (s *Service) FindAllRequests(ctx context.Context, userID string, query Requ
 
 	var nextCursor *string
 	if len(records) > query.Limit {
-		nextCursor = &records[len(records)-1].UserID
 		records = records[:query.Limit]
+		cursor := records[len(records)-1].UserID
+		nextCursor = &cursor
 	}
 
 	requests := make([]PendingResponse, len(records))
@@ -75,8 +85,9 @@ func (s *Service) FindAll(ctx context.Context, userID string, query ListQuery) (
 
 	var nextCursor *string
 	if len(friends) > query.Limit {
-		nextCursor = &friends[len(friends)-1].UserID
 		friends = friends[:query.Limit]
+		cursor := friends[len(friends)-1].UserID
+		nextCursor = &cursor
 	}
 
 	return &ListResponse{
@@ -121,36 +132,38 @@ func (s *Service) AddFriend(ctx context.Context, userID, targetID string) (*Pend
 		return nil, apperr.ErrNotFound
 	}
 
-	// TODO: check block (both ways)
+	blocked, err := s.blockChecker.IsBlockedEitherWay(ctx, userID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, apperr.ErrForbidden
+	}
 
 	low, high := canonical(userID, targetID)
 
-	pair, err := s.repository.FindByPair(ctx, low, high)
+	//   - conflict (sudah friends / sudah pernah request) → sql.ErrNoRows
+	record, err := s.repository.UpsertFriend(ctx, low, high, userID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, apperr.ErrConflict
+		}
 		return nil, err
 	}
 
-	if pair != nil {
-		if pair.Status == StatusAccepted {
-			return nil, apperr.ErrConflict
-		}
-		if pair.RequesterID == userID {
-			return nil, apperr.ErrConflict
-		}
-		// mutual request → auto-accept
-		record, err := s.repository.AcceptFriend(ctx, low, high)
-		if err != nil {
-			return nil, err
-		}
-		return toSentPending(record), nil
+	direction := "sent"
+	if record.Status == StatusAccepted {
+		direction = "accepted"
 	}
 
-	record, err := s.repository.AddFriend(ctx, low, high, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	return toSentPending(record), nil
+	return &PendingResponse{
+		UserID:    record.UserID,
+		Username:  record.Username,
+		FullName:  record.FullName,
+		Direction: direction,
+		Status:    record.Status,
+		CreatedAt: record.CreatedAt,
+	}, nil
 }
 
 func (s *Service) Unfriend(ctx context.Context, userID, targetID string) error {
@@ -216,8 +229,11 @@ func (s *Service) AcceptFriendRequest(ctx context.Context, userID, targetID stri
 		return nil, apperr.ErrForbidden
 	}
 
-	record, err := s.repository.AcceptFriend(ctx, low, high)
+	record, err := s.repository.UpsertFriend(ctx, low, high, userID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, apperr.ErrConflict
+		}
 		return nil, err
 	}
 
@@ -255,14 +271,4 @@ func canonical(a, b string) (low, high string) {
 		return a, b
 	}
 	return b, a
-}
-
-func toSentPending(r *Record) *PendingResponse {
-	return &PendingResponse{
-		UserID:    r.UserID,
-		Username:  r.Username,
-		FullName:  r.FullName,
-		Direction: "sent",
-		CreatedAt: r.CreatedAt,
-	}
 }
