@@ -1,20 +1,22 @@
 package auth
 
 import (
+	"context"
+	"time"
+
 	"github.com/BleKuntay/FlipChat/backend/internal/config"
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
 	"github.com/BleKuntay/FlipChat/backend/pkg/jwt"
 	"github.com/gofiber/fiber/v3"
 	"github.com/pkg/errors"
-	"time"
 )
 
 type ServiceInterface interface {
-	Register(request *RegisterRequest) (*Response, string, error)
-	Login(request *LoginRequest) (*Response, string, error)
-	Logout(refreshToken string) error
-	LogoutAll(userID string) error
-	Refresh(refreshToken string) (access, refresh string, err error)
+	Register(ctx context.Context, request *RegisterRequest) (*Response, string, error)
+	Login(ctx context.Context, request *LoginRequest) (*Response, string, error)
+	Logout(ctx context.Context, refreshToken string) error
+	LogoutAll(ctx context.Context, userID string) error
+	Refresh(ctx context.Context, refreshToken string) (access, refresh string, err error)
 }
 
 type Handler struct {
@@ -34,12 +36,14 @@ func (h *Handler) RegisterRoutes(router fiber.Router) {
 }
 
 func (h *Handler) Register(c fiber.Ctx) error {
+	ctx := c.Context()
+
 	request := new(RegisterRequest)
 	if err := c.Bind().Body(request); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	response, refreshToken, err := h.service.Register(request)
+	response, refreshToken, err := h.service.Register(ctx, request)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmailAlreadyInUse):
@@ -59,12 +63,14 @@ func (h *Handler) Register(c fiber.Ctx) error {
 }
 
 func (h *Handler) Login(c fiber.Ctx) error {
+	ctx := c.Context()
+
 	request := new(LoginRequest)
 	if err := c.Bind().Body(request); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	response, refreshToken, err := h.service.Login(request)
+	response, refreshToken, err := h.service.Login(ctx, request)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):
@@ -80,8 +86,10 @@ func (h *Handler) Login(c fiber.Ctx) error {
 }
 
 func (h *Handler) Logout(c fiber.Ctx) error {
+	ctx := c.Context()
+
 	if refreshToken := c.Cookies("refresh_token"); refreshToken != "" {
-		_ = h.service.Logout(refreshToken)
+		_ = h.service.Logout(ctx, refreshToken)
 	}
 
 	clearCookie(c)
@@ -90,9 +98,10 @@ func (h *Handler) Logout(c fiber.Ctx) error {
 }
 
 func (h *Handler) LogoutAll(c fiber.Ctx) error {
+	ctx := c.Context()
 	userID := fiber.Locals[string](c, "user_id")
 
-	if err := h.service.LogoutAll(userID); err != nil {
+	if err := h.service.LogoutAll(ctx, userID); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -102,12 +111,14 @@ func (h *Handler) LogoutAll(c fiber.Ctx) error {
 }
 
 func (h *Handler) Refresh(c fiber.Ctx) error {
+	ctx := c.Context()
+
 	refreshToken := c.Cookies("refresh_token")
 	if refreshToken == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "refresh token required"})
 	}
 
-	accessToken, newRefreshToken, err := h.service.Refresh(refreshToken)
+	accessToken, newRefreshToken, err := h.service.Refresh(ctx, refreshToken)
 	if err != nil {
 		switch {
 		case errors.Is(err, jwt.ErrInvalidToken):

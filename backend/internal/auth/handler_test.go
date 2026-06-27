@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -23,32 +24,32 @@ import (
 
 type mockService struct{ mock.Mock }
 
-func (m *mockService) Register(req *RegisterRequest) (*Response, string, error) {
-	args := m.Called(req)
+func (m *mockService) Register(ctx context.Context, req *RegisterRequest) (*Response, string, error) {
+	args := m.Called(ctx, req)
 	if r, ok := args.Get(0).(*Response); ok {
 		return r, args.String(1), args.Error(2)
 	}
 	return nil, "", args.Error(2)
 }
 
-func (m *mockService) Login(req *LoginRequest) (*Response, string, error) {
-	args := m.Called(req)
+func (m *mockService) Login(ctx context.Context, req *LoginRequest) (*Response, string, error) {
+	args := m.Called(ctx, req)
 	if r, ok := args.Get(0).(*Response); ok {
 		return r, args.String(1), args.Error(2)
 	}
 	return nil, "", args.Error(2)
 }
 
-func (m *mockService) Logout(refreshToken string) error {
-	return m.Called(refreshToken).Error(0)
+func (m *mockService) Logout(ctx context.Context, refreshToken string) error {
+	return m.Called(ctx, refreshToken).Error(0)
 }
 
-func (m *mockService) LogoutAll(userID string) error {
-	return m.Called(userID).Error(0)
+func (m *mockService) LogoutAll(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
 }
 
-func (m *mockService) Refresh(refreshToken string) (string, string, error) {
-	args := m.Called(refreshToken)
+func (m *mockService) Refresh(ctx context.Context, refreshToken string) (string, string, error) {
+	args := m.Called(ctx, refreshToken)
 	return args.String(0), args.String(1), args.Error(2)
 }
 
@@ -126,7 +127,7 @@ func TestHandler_Register(t *testing.T) {
 
 	t.Run("201 succeeds and sets refresh token cookie", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Register", mock.AnythingOfType("*auth.RegisterRequest")).
+		svc.On("Register", mock.Anything, mock.AnythingOfType("*auth.RegisterRequest")).
 			Return(stubAuthResponse(), "refresh-token-value", nil)
 
 		app := newTestApp(svc, "")
@@ -165,7 +166,7 @@ func TestHandler_Register(t *testing.T) {
 
 	t.Run("400 if password weak", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Register", mock.AnythingOfType("*auth.RegisterRequest")).
+		svc.On("Register", mock.Anything, mock.AnythingOfType("*auth.RegisterRequest")).
 			Return((*Response)(nil), "", shared.ErrPasswordWeak)
 
 		app := newTestApp(svc, "")
@@ -176,7 +177,7 @@ func TestHandler_Register(t *testing.T) {
 
 	t.Run("409 if email already in use", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Register", mock.AnythingOfType("*auth.RegisterRequest")).
+		svc.On("Register", mock.Anything, mock.AnythingOfType("*auth.RegisterRequest")).
 			Return((*Response)(nil), "", ErrEmailAlreadyInUse)
 
 		app := newTestApp(svc, "")
@@ -190,7 +191,7 @@ func TestHandler_Register(t *testing.T) {
 
 	t.Run("409 if username already taken", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Register", mock.AnythingOfType("*auth.RegisterRequest")).
+		svc.On("Register", mock.Anything, mock.AnythingOfType("*auth.RegisterRequest")).
 			Return((*Response)(nil), "", ErrUsernameAlreadyTaken)
 
 		app := newTestApp(svc, "")
@@ -204,7 +205,7 @@ func TestHandler_Register(t *testing.T) {
 
 	t.Run("500 for unexpected error — returns generic message", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Register", mock.AnythingOfType("*auth.RegisterRequest")).
+		svc.On("Register", mock.Anything, mock.AnythingOfType("*auth.RegisterRequest")).
 			Return((*Response)(nil), "", errors.New("unexpected db error"))
 
 		app := newTestApp(svc, "")
@@ -213,12 +214,12 @@ func TestHandler_Register(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 		var body map[string]string
 		decodeJSON(t, resp, &body)
-		assert.Equal(t, "internal server error", body["error"], "internal error harus tidak bocor ke client")
+		assert.Equal(t, "internal server error", body["error"])
 	})
 
 	t.Run("password field does not appear in response", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Register", mock.AnythingOfType("*auth.RegisterRequest")).
+		svc.On("Register", mock.Anything, mock.AnythingOfType("*auth.RegisterRequest")).
 			Return(stubAuthResponse(), "refresh-token-value", nil)
 
 		app := newTestApp(svc, "")
@@ -241,7 +242,7 @@ func TestHandler_Login(t *testing.T) {
 
 	t.Run("200 succeeds and sets refresh token cookie", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Login", mock.AnythingOfType("*auth.LoginRequest")).
+		svc.On("Login", mock.Anything, mock.AnythingOfType("*auth.LoginRequest")).
 			Return(stubAuthResponse(), "refresh-token-value", nil)
 
 		app := newTestApp(svc, "")
@@ -257,11 +258,11 @@ func TestHandler_Login(t *testing.T) {
 		for _, c := range resp.Cookies() {
 			if c.Name == "refresh_token" {
 				hasRefreshCookie = true
-				assert.True(t, c.HttpOnly, "refresh_token cookie harus HttpOnly")
+				assert.True(t, c.HttpOnly)
 				break
 			}
 		}
-		assert.True(t, hasRefreshCookie, "refresh_token cookie harus di-set")
+		assert.True(t, hasRefreshCookie)
 		svc.AssertExpectations(t)
 	})
 
@@ -279,7 +280,7 @@ func TestHandler_Login(t *testing.T) {
 
 	t.Run("401 if invalid credentials", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Login", mock.AnythingOfType("*auth.LoginRequest")).
+		svc.On("Login", mock.Anything, mock.AnythingOfType("*auth.LoginRequest")).
 			Return((*Response)(nil), "", ErrInvalidCredentials)
 
 		app := newTestApp(svc, "")
@@ -293,7 +294,7 @@ func TestHandler_Login(t *testing.T) {
 
 	t.Run("500 for unexpected error — returns generic message", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Login", mock.AnythingOfType("*auth.LoginRequest")).
+		svc.On("Login", mock.Anything, mock.AnythingOfType("*auth.LoginRequest")).
 			Return((*Response)(nil), "", errors.New("db down"))
 
 		app := newTestApp(svc, "")
@@ -311,7 +312,7 @@ func TestHandler_Login(t *testing.T) {
 func TestHandler_Logout(t *testing.T) {
 	t.Run("200 succeeds and clears cookie", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Logout", "valid-refresh-token").Return(nil)
+		svc.On("Logout", mock.Anything, "valid-refresh-token").Return(nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequestWithCookie(app, http.MethodPost, "/v1/auth/logout", nil, "refresh_token", "valid-refresh-token")
@@ -342,7 +343,7 @@ func TestHandler_Logout(t *testing.T) {
 
 	t.Run("200 even if service.Logout fails — cookie tetap di-clear", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Logout", "some-token").Return(errors.New("db error"))
+		svc.On("Logout", mock.Anything, "some-token").Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequestWithCookie(app, http.MethodPost, "/v1/auth/logout", nil, "refresh_token", "some-token")
@@ -356,7 +357,7 @@ func TestHandler_Logout(t *testing.T) {
 func TestHandler_LogoutAll(t *testing.T) {
 	t.Run("204 succeeds", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("LogoutAll", "user-123").Return(nil)
+		svc.On("LogoutAll", mock.Anything, "user-123").Return(nil)
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPost, "/v1/auth/logout-all", nil)
@@ -367,7 +368,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 
 	t.Run("500 if service fails", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("LogoutAll", "user-123").Return(errors.New("db error"))
+		svc.On("LogoutAll", mock.Anything, "user-123").Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
 		resp := doRequest(app, http.MethodPost, "/v1/auth/logout-all", nil)
@@ -377,7 +378,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 
 	t.Run("userID comes from context (auth middleware), not body", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("LogoutAll", "context-user").Return(nil)
+		svc.On("LogoutAll", mock.Anything, "context-user").Return(nil)
 
 		app := newTestApp(svc, "context-user")
 		resp := doRequest(app, http.MethodPost, "/v1/auth/logout-all", map[string]string{
@@ -385,7 +386,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-		svc.AssertCalled(t, "LogoutAll", "context-user")
+		svc.AssertCalled(t, "LogoutAll", mock.Anything, "context-user")
 	})
 }
 
@@ -394,7 +395,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 func TestHandler_Refresh(t *testing.T) {
 	t.Run("200 succeeds — returns new access token and rotates cookie", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Refresh", "valid-refresh-token").
+		svc.On("Refresh", mock.Anything, "valid-refresh-token").
 			Return("new-access-token", "new-refresh-token", nil)
 
 		app := newTestApp(svc, "")
@@ -429,7 +430,7 @@ func TestHandler_Refresh(t *testing.T) {
 
 	t.Run("401 if token invalid", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Refresh", "bad-token").
+		svc.On("Refresh", mock.Anything, "bad-token").
 			Return("", "", pkgjwt.ErrInvalidToken)
 
 		app := newTestApp(svc, "")
@@ -440,7 +441,7 @@ func TestHandler_Refresh(t *testing.T) {
 
 	t.Run("401 if token expired", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Refresh", "expired-token").
+		svc.On("Refresh", mock.Anything, "expired-token").
 			Return("", "", pkgjwt.ErrRefreshTokenExpired)
 
 		app := newTestApp(svc, "")
@@ -451,7 +452,7 @@ func TestHandler_Refresh(t *testing.T) {
 
 	t.Run("500 for unexpected error — returns generic message", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("Refresh", "some-token").
+		svc.On("Refresh", mock.Anything, "some-token").
 			Return("", "", errors.New("db down"))
 
 		app := newTestApp(svc, "")

@@ -1,22 +1,24 @@
 package auth
 
 import (
+	"context"
+	"time"
+
 	"github.com/BleKuntay/FlipChat/backend/internal/config"
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
 	"github.com/BleKuntay/FlipChat/backend/pkg/jwt"
-	"time"
 )
 
 type RepositoryInterface interface {
-	CreateUser(user *User) (*User, error)
-	FindUserByEmail(email string) (*User, error)
-	ExistsByEmail(email string) (bool, error)
-	ExistsByUsername(username string) (bool, error)
-	SaveRefreshToken(refreshToken RefreshToken) error
-	DeleteTokenByToken(token string) error
-	DeleteTokenByUserID(token string) error
-	FindTokenByToken(token string) (*RefreshToken, error)
-	RotateRefreshToken(oldToken, newToken string, expiresAt time.Time) error
+	CreateUser(ctx context.Context, user *User) (*User, error)
+	FindUserByEmail(ctx context.Context, email string) (*User, error)
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
+	ExistsByUsername(ctx context.Context, username string) (bool, error)
+	SaveRefreshToken(ctx context.Context, refreshToken RefreshToken) error
+	DeleteTokenByToken(ctx context.Context, token string) error
+	DeleteTokenByUserID(ctx context.Context, userID string) error
+	FindTokenByToken(ctx context.Context, token string) (*RefreshToken, error)
+	RotateRefreshToken(ctx context.Context, oldToken, newToken string, expiresAt time.Time) error
 }
 
 type Service struct {
@@ -27,12 +29,12 @@ func NewService(repository RepositoryInterface) *Service {
 	return &Service{repository: repository}
 }
 
-func (s *Service) Register(request *RegisterRequest) (response *Response, refresh string, error error) {
+func (s *Service) Register(ctx context.Context, request *RegisterRequest) (response *Response, refresh string, error error) {
 	if err := shared.ValidatePassword(request.Password); err != nil {
 		return nil, "", err
 	}
 
-	exists, err := s.repository.ExistsByEmail(request.Email)
+	exists, err := s.repository.ExistsByEmail(ctx, request.Email)
 	if err != nil {
 		return nil, "", err
 	}
@@ -40,7 +42,7 @@ func (s *Service) Register(request *RegisterRequest) (response *Response, refres
 		return nil, "", ErrEmailAlreadyInUse
 	}
 
-	exists, err = s.repository.ExistsByUsername(request.Username)
+	exists, err = s.repository.ExistsByUsername(ctx, request.Username)
 	if err != nil {
 		return nil, "", err
 	}
@@ -66,7 +68,7 @@ func (s *Service) Register(request *RegisterRequest) (response *Response, refres
 		u.Language = "en"
 	}
 
-	user, err := s.repository.CreateUser(u)
+	user, err := s.repository.CreateUser(ctx, u)
 	if err != nil {
 		return nil, "", err
 	}
@@ -76,20 +78,18 @@ func (s *Service) Register(request *RegisterRequest) (response *Response, refres
 		return nil, "", err
 	}
 
-	if err := s.saveRefreshToken(user.ID, rt); err != nil {
+	if err := s.saveRefreshToken(ctx, user.ID, rt); err != nil {
 		return nil, "", err
 	}
 
-	res := &Response{
+	return &Response{
 		AccessToken: at,
 		User:        toUserResponse(user),
-	}
-
-	return res, rt, nil
+	}, rt, nil
 }
 
-func (s *Service) Login(request *LoginRequest) (response *Response, refresh string, error error) {
-	user, err := s.repository.FindUserByEmail(request.Email)
+func (s *Service) Login(ctx context.Context, request *LoginRequest) (response *Response, refresh string, error error) {
+	user, err := s.repository.FindUserByEmail(ctx, request.Email)
 	if err != nil || user == nil {
 		shared.DummyVerify(request.Password)
 		return nil, "", ErrInvalidCredentials
@@ -104,36 +104,26 @@ func (s *Service) Login(request *LoginRequest) (response *Response, refresh stri
 		return nil, "", err
 	}
 
-	if err := s.saveRefreshToken(user.ID, rt); err != nil {
+	if err := s.saveRefreshToken(ctx, user.ID, rt); err != nil {
 		return nil, "", err
 	}
 
-	res := &Response{
+	return &Response{
 		AccessToken: at,
 		User:        toUserResponse(user),
-	}
-
-	return res, rt, nil
+	}, rt, nil
 }
 
-func (s *Service) Logout(refreshToken string) error {
-	if err := s.repository.DeleteTokenByToken(refreshToken); err != nil {
-		return err
-	}
-
-	return nil
+func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+	return s.repository.DeleteTokenByToken(ctx, refreshToken)
 }
 
-func (s *Service) LogoutAll(userID string) error {
-	if err := s.repository.DeleteTokenByUserID(userID); err != nil {
-		return err
-	}
-
-	return nil
+func (s *Service) LogoutAll(ctx context.Context, userID string) error {
+	return s.repository.DeleteTokenByUserID(ctx, userID)
 }
 
-func (s *Service) Refresh(refreshToken string) (access, refresh string, error error) {
-	token, err := s.repository.FindTokenByToken(refreshToken)
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (access, refresh string, error error) {
+	token, err := s.repository.FindTokenByToken(ctx, refreshToken)
 	if err != nil {
 		return "", "", err
 	}
@@ -162,7 +152,7 @@ func (s *Service) Refresh(refreshToken string) (access, refresh string, error er
 		return "", "", err
 	}
 
-	if err := s.repository.RotateRefreshToken(token.Token, rt, now.Add(config.App.RefreshTokenExpiry)); err != nil {
+	if err := s.repository.RotateRefreshToken(ctx, token.Token, rt, now.Add(config.App.RefreshTokenExpiry)); err != nil {
 		return "", "", err
 	}
 
@@ -183,9 +173,9 @@ func (s *Service) generateTokenPair(userID, username, email string) (at, rt stri
 	return at, rt, nil
 }
 
-func (s *Service) saveRefreshToken(userID, token string) error {
+func (s *Service) saveRefreshToken(ctx context.Context, userID, token string) error {
 	now := time.Now()
-	return s.repository.SaveRefreshToken(RefreshToken{
+	return s.repository.SaveRefreshToken(ctx, RefreshToken{
 		UserID:    userID,
 		Token:     token,
 		ExpiresAt: now.Add(config.App.RefreshTokenExpiry),

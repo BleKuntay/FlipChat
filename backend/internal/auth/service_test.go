@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -64,54 +65,54 @@ func stubRefreshToken(userID string) *RefreshToken {
 
 type mockRepo struct{ mock.Mock }
 
-func (m *mockRepo) CreateUser(u *User) (*User, error) {
-	args := m.Called(u)
+func (m *mockRepo) CreateUser(ctx context.Context, u *User) (*User, error) {
+	args := m.Called(ctx, u)
 	if r, ok := args.Get(0).(*User); ok {
 		return r, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockRepo) FindUserByEmail(email string) (*User, error) {
-	args := m.Called(email)
+func (m *mockRepo) FindUserByEmail(ctx context.Context, email string) (*User, error) {
+	args := m.Called(ctx, email)
 	if u, ok := args.Get(0).(*User); ok {
 		return u, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockRepo) ExistsByEmail(email string) (bool, error) {
-	args := m.Called(email)
+func (m *mockRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+	args := m.Called(ctx, email)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockRepo) ExistsByUsername(username string) (bool, error) {
-	args := m.Called(username)
+func (m *mockRepo) ExistsByUsername(ctx context.Context, username string) (bool, error) {
+	args := m.Called(ctx, username)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockRepo) SaveRefreshToken(token RefreshToken) error {
-	return m.Called(token).Error(0)
+func (m *mockRepo) SaveRefreshToken(ctx context.Context, token RefreshToken) error {
+	return m.Called(ctx, token).Error(0)
 }
 
-func (m *mockRepo) DeleteTokenByToken(token string) error {
-	return m.Called(token).Error(0)
+func (m *mockRepo) DeleteTokenByToken(ctx context.Context, token string) error {
+	return m.Called(ctx, token).Error(0)
 }
 
-func (m *mockRepo) DeleteTokenByUserID(userID string) error {
-	return m.Called(userID).Error(0)
+func (m *mockRepo) DeleteTokenByUserID(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
 }
 
-func (m *mockRepo) FindTokenByToken(token string) (*RefreshToken, error) {
-	args := m.Called(token)
+func (m *mockRepo) FindTokenByToken(ctx context.Context, token string) (*RefreshToken, error) {
+	args := m.Called(ctx, token)
 	if rt, ok := args.Get(0).(*RefreshToken); ok {
 		return rt, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
 
-func (m *mockRepo) RotateRefreshToken(oldToken, newToken string, expiresAt time.Time) error {
-	return m.Called(oldToken, newToken, expiresAt).Error(0)
+func (m *mockRepo) RotateRefreshToken(ctx context.Context, oldToken, newToken string, expiresAt time.Time) error {
+	return m.Called(ctx, oldToken, newToken, expiresAt).Error(0)
 }
 
 func newTestService(repo RepositoryInterface) *Service {
@@ -121,6 +122,8 @@ func newTestService(repo RepositoryInterface) *Service {
 // ── Register ──────────────────────────────────────────────────────────────────
 
 func TestService_Register(t *testing.T) {
+	ctx := context.Background()
+
 	validReq := &RegisterRequest{
 		Name:     "John Doe",
 		Username: "johndoe",
@@ -130,13 +133,13 @@ func TestService_Register(t *testing.T) {
 
 	t.Run("succeeds and returns response and refresh token", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("ExistsByEmail", validReq.Email).Return(false, nil)
-		repo.On("ExistsByUsername", validReq.Username).Return(false, nil)
-		repo.On("CreateUser", mock.AnythingOfType("*auth.User")).Return(stubUser(), nil)
-		repo.On("SaveRefreshToken", mock.AnythingOfType("auth.RefreshToken")).Return(nil)
+		repo.On("ExistsByEmail", mock.Anything, validReq.Email).Return(false, nil)
+		repo.On("ExistsByUsername", mock.Anything, validReq.Username).Return(false, nil)
+		repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*auth.User")).Return(stubUser(), nil)
+		repo.On("SaveRefreshToken", mock.Anything, mock.AnythingOfType("auth.RefreshToken")).Return(nil)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Register(validReq)
+		res, rt, err := svc.Register(ctx, validReq)
 
 		require.NoError(t, err)
 		require.NotNil(t, res)
@@ -152,7 +155,7 @@ func TestService_Register(t *testing.T) {
 
 		req := *validReq
 		req.Password = "Ab1"
-		res, rt, err := svc.Register(&req)
+		res, rt, err := svc.Register(ctx, &req)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -166,7 +169,7 @@ func TestService_Register(t *testing.T) {
 
 		req := *validReq
 		req.Password = "Secret12345678901234567890123456X" // 33 chars
-		res, rt, err := svc.Register(&req)
+		res, rt, err := svc.Register(ctx, &req)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -180,7 +183,7 @@ func TestService_Register(t *testing.T) {
 
 		req := *validReq
 		req.Password = "alllowercase"
-		res, rt, err := svc.Register(&req)
+		res, rt, err := svc.Register(ctx, &req)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -190,10 +193,10 @@ func TestService_Register(t *testing.T) {
 
 	t.Run("email already in use returns ErrEmailAlreadyInUse", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("ExistsByEmail", validReq.Email).Return(true, nil)
+		repo.On("ExistsByEmail", mock.Anything, validReq.Email).Return(true, nil)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Register(validReq)
+		res, rt, err := svc.Register(ctx, validReq)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -203,11 +206,11 @@ func TestService_Register(t *testing.T) {
 
 	t.Run("username already taken returns ErrUsernameAlreadyTaken", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("ExistsByEmail", validReq.Email).Return(false, nil)
-		repo.On("ExistsByUsername", validReq.Username).Return(true, nil)
+		repo.On("ExistsByEmail", mock.Anything, validReq.Email).Return(false, nil)
+		repo.On("ExistsByUsername", mock.Anything, validReq.Username).Return(true, nil)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Register(validReq)
+		res, rt, err := svc.Register(ctx, validReq)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -217,15 +220,15 @@ func TestService_Register(t *testing.T) {
 
 	t.Run("language defaults to en if not provided", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("ExistsByEmail", validReq.Email).Return(false, nil)
-		repo.On("ExistsByUsername", validReq.Username).Return(false, nil)
-		repo.On("CreateUser", mock.MatchedBy(func(u *User) bool {
+		repo.On("ExistsByEmail", mock.Anything, validReq.Email).Return(false, nil)
+		repo.On("ExistsByUsername", mock.Anything, validReq.Username).Return(false, nil)
+		repo.On("CreateUser", mock.Anything, mock.MatchedBy(func(u *User) bool {
 			return u.Language == "en"
 		})).Return(stubUser(), nil)
-		repo.On("SaveRefreshToken", mock.AnythingOfType("auth.RefreshToken")).Return(nil)
+		repo.On("SaveRefreshToken", mock.Anything, mock.AnythingOfType("auth.RefreshToken")).Return(nil)
 
 		svc := newTestService(repo)
-		_, _, err := svc.Register(validReq)
+		_, _, err := svc.Register(ctx, validReq)
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
@@ -237,15 +240,15 @@ func TestService_Register(t *testing.T) {
 		req := *validReq
 		req.Language = &lang
 
-		repo.On("ExistsByEmail", req.Email).Return(false, nil)
-		repo.On("ExistsByUsername", req.Username).Return(false, nil)
-		repo.On("CreateUser", mock.MatchedBy(func(u *User) bool {
+		repo.On("ExistsByEmail", mock.Anything, req.Email).Return(false, nil)
+		repo.On("ExistsByUsername", mock.Anything, req.Username).Return(false, nil)
+		repo.On("CreateUser", mock.Anything, mock.MatchedBy(func(u *User) bool {
 			return u.Language == "id"
 		})).Return(stubUser(), nil)
-		repo.On("SaveRefreshToken", mock.AnythingOfType("auth.RefreshToken")).Return(nil)
+		repo.On("SaveRefreshToken", mock.Anything, mock.AnythingOfType("auth.RefreshToken")).Return(nil)
 
 		svc := newTestService(repo)
-		_, _, err := svc.Register(&req)
+		_, _, err := svc.Register(ctx, &req)
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
@@ -254,12 +257,12 @@ func TestService_Register(t *testing.T) {
 	t.Run("repository.CreateUser fails → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		dbErr := errors.New("db write error")
-		repo.On("ExistsByEmail", validReq.Email).Return(false, nil)
-		repo.On("ExistsByUsername", validReq.Username).Return(false, nil)
-		repo.On("CreateUser", mock.AnythingOfType("*auth.User")).Return((*User)(nil), dbErr)
+		repo.On("ExistsByEmail", mock.Anything, validReq.Email).Return(false, nil)
+		repo.On("ExistsByUsername", mock.Anything, validReq.Username).Return(false, nil)
+		repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*auth.User")).Return((*User)(nil), dbErr)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Register(validReq)
+		res, rt, err := svc.Register(ctx, validReq)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -270,13 +273,13 @@ func TestService_Register(t *testing.T) {
 	t.Run("repository.SaveRefreshToken fails → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		dbErr := errors.New("db write error")
-		repo.On("ExistsByEmail", validReq.Email).Return(false, nil)
-		repo.On("ExistsByUsername", validReq.Username).Return(false, nil)
-		repo.On("CreateUser", mock.AnythingOfType("*auth.User")).Return(stubUser(), nil)
-		repo.On("SaveRefreshToken", mock.AnythingOfType("auth.RefreshToken")).Return(dbErr)
+		repo.On("ExistsByEmail", mock.Anything, validReq.Email).Return(false, nil)
+		repo.On("ExistsByUsername", mock.Anything, validReq.Username).Return(false, nil)
+		repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*auth.User")).Return(stubUser(), nil)
+		repo.On("SaveRefreshToken", mock.Anything, mock.AnythingOfType("auth.RefreshToken")).Return(dbErr)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Register(validReq)
+		res, rt, err := svc.Register(ctx, validReq)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -287,6 +290,8 @@ func TestService_Register(t *testing.T) {
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 func TestService_Login(t *testing.T) {
+	ctx := context.Background()
+
 	validReq := &LoginRequest{
 		Email:    "john@example.com",
 		Password: "Secret123",
@@ -295,11 +300,11 @@ func TestService_Login(t *testing.T) {
 	t.Run("succeeds and returns response and refresh token", func(t *testing.T) {
 		repo := new(mockRepo)
 		u := stubUser()
-		repo.On("FindUserByEmail", validReq.Email).Return(u, nil)
-		repo.On("SaveRefreshToken", mock.AnythingOfType("auth.RefreshToken")).Return(nil)
+		repo.On("FindUserByEmail", mock.Anything, validReq.Email).Return(u, nil)
+		repo.On("SaveRefreshToken", mock.Anything, mock.AnythingOfType("auth.RefreshToken")).Return(nil)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Login(validReq)
+		res, rt, err := svc.Login(ctx, validReq)
 
 		require.NoError(t, err)
 		require.NotNil(t, res)
@@ -311,10 +316,10 @@ func TestService_Login(t *testing.T) {
 
 	t.Run("email not found returns ErrInvalidCredentials", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindUserByEmail", validReq.Email).Return((*User)(nil), nil)
+		repo.On("FindUserByEmail", mock.Anything, validReq.Email).Return((*User)(nil), nil)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Login(validReq)
+		res, rt, err := svc.Login(ctx, validReq)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -325,10 +330,10 @@ func TestService_Login(t *testing.T) {
 	t.Run("wrong password returns ErrInvalidCredentials", func(t *testing.T) {
 		repo := new(mockRepo)
 		u := stubUser()
-		repo.On("FindUserByEmail", validReq.Email).Return(u, nil)
+		repo.On("FindUserByEmail", mock.Anything, validReq.Email).Return(u, nil)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Login(&LoginRequest{
+		res, rt, err := svc.Login(ctx, &LoginRequest{
 			Email:    validReq.Email,
 			Password: "WrongPass1",
 		})
@@ -341,10 +346,10 @@ func TestService_Login(t *testing.T) {
 
 	t.Run("db error returns ErrInvalidCredentials (timing attack mitigation)", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindUserByEmail", validReq.Email).Return((*User)(nil), errors.New("connection refused"))
+		repo.On("FindUserByEmail", mock.Anything, validReq.Email).Return((*User)(nil), errors.New("connection refused"))
 
 		svc := newTestService(repo)
-		_, _, err := svc.Login(validReq)
+		_, _, err := svc.Login(ctx, validReq)
 
 		assert.ErrorIs(t, err, ErrInvalidCredentials)
 	})
@@ -353,11 +358,11 @@ func TestService_Login(t *testing.T) {
 		repo := new(mockRepo)
 		u := stubUser()
 		dbErr := errors.New("db write error")
-		repo.On("FindUserByEmail", validReq.Email).Return(u, nil)
-		repo.On("SaveRefreshToken", mock.AnythingOfType("auth.RefreshToken")).Return(dbErr)
+		repo.On("FindUserByEmail", mock.Anything, validReq.Email).Return(u, nil)
+		repo.On("SaveRefreshToken", mock.Anything, mock.AnythingOfType("auth.RefreshToken")).Return(dbErr)
 
 		svc := newTestService(repo)
-		res, rt, err := svc.Login(validReq)
+		res, rt, err := svc.Login(ctx, validReq)
 
 		assert.Nil(t, res)
 		assert.Empty(t, rt)
@@ -368,12 +373,14 @@ func TestService_Login(t *testing.T) {
 // ── Logout ────────────────────────────────────────────────────────────────────
 
 func TestService_Logout(t *testing.T) {
+	ctx := context.Background()
+
 	t.Run("succeeds", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("DeleteTokenByToken", "some-token").Return(nil)
+		repo.On("DeleteTokenByToken", mock.Anything, "some-token").Return(nil)
 
 		svc := newTestService(repo)
-		err := svc.Logout("some-token")
+		err := svc.Logout(ctx, "some-token")
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
@@ -382,10 +389,10 @@ func TestService_Logout(t *testing.T) {
 	t.Run("repository error → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		dbErr := errors.New("db error")
-		repo.On("DeleteTokenByToken", "some-token").Return(dbErr)
+		repo.On("DeleteTokenByToken", mock.Anything, "some-token").Return(dbErr)
 
 		svc := newTestService(repo)
-		err := svc.Logout("some-token")
+		err := svc.Logout(ctx, "some-token")
 
 		assert.ErrorIs(t, err, dbErr)
 	})
@@ -394,12 +401,14 @@ func TestService_Logout(t *testing.T) {
 // ── LogoutAll ─────────────────────────────────────────────────────────────────
 
 func TestService_LogoutAll(t *testing.T) {
+	ctx := context.Background()
+
 	t.Run("succeeds", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("DeleteTokenByUserID", "user-123").Return(nil)
+		repo.On("DeleteTokenByUserID", mock.Anything, "user-123").Return(nil)
 
 		svc := newTestService(repo)
-		err := svc.LogoutAll("user-123")
+		err := svc.LogoutAll(ctx, "user-123")
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
@@ -408,10 +417,10 @@ func TestService_LogoutAll(t *testing.T) {
 	t.Run("repository error → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		dbErr := errors.New("db error")
-		repo.On("DeleteTokenByUserID", "user-123").Return(dbErr)
+		repo.On("DeleteTokenByUserID", mock.Anything, "user-123").Return(dbErr)
 
 		svc := newTestService(repo)
-		err := svc.LogoutAll("user-123")
+		err := svc.LogoutAll(ctx, "user-123")
 
 		assert.ErrorIs(t, err, dbErr)
 	})
@@ -420,29 +429,30 @@ func TestService_LogoutAll(t *testing.T) {
 // ── Refresh ───────────────────────────────────────────────────────────────────
 
 func TestService_Refresh(t *testing.T) {
+	ctx := context.Background()
+
 	t.Run("succeeds and returns new access and refresh token", func(t *testing.T) {
 		repo := new(mockRepo)
 		rt := stubRefreshToken("user-123")
-		repo.On("FindTokenByToken", rt.Token).Return(rt, nil)
-		repo.On("RotateRefreshToken", rt.Token, mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).Return(nil)
+		repo.On("FindTokenByToken", mock.Anything, rt.Token).Return(rt, nil)
+		repo.On("RotateRefreshToken", mock.Anything, rt.Token, mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).Return(nil)
 
 		svc := newTestService(repo)
-		at, newRt, err := svc.Refresh(rt.Token)
+		at, newRt, err := svc.Refresh(ctx, rt.Token)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, at)
 		assert.NotEmpty(t, newRt)
-		// Verifikasi RotateRefreshToken dipanggil dengan token lama dan token baru yang di-return
-		repo.AssertCalled(t, "RotateRefreshToken", rt.Token, newRt, mock.AnythingOfType("time.Time"))
+		repo.AssertCalled(t, "RotateRefreshToken", mock.Anything, rt.Token, newRt, mock.AnythingOfType("time.Time"))
 		repo.AssertExpectations(t)
 	})
 
 	t.Run("token not found returns ErrInvalidToken", func(t *testing.T) {
 		repo := new(mockRepo)
-		repo.On("FindTokenByToken", "ghost-token").Return((*RefreshToken)(nil), nil)
+		repo.On("FindTokenByToken", mock.Anything, "ghost-token").Return((*RefreshToken)(nil), nil)
 
 		svc := newTestService(repo)
-		at, rt, err := svc.Refresh("ghost-token")
+		at, rt, err := svc.Refresh(ctx, "ghost-token")
 
 		assert.Empty(t, at)
 		assert.Empty(t, rt)
@@ -453,10 +463,10 @@ func TestService_Refresh(t *testing.T) {
 		repo := new(mockRepo)
 		expiredRt := stubRefreshToken("user-123")
 		expiredRt.ExpiresAt = time.Now().Add(-1 * time.Hour)
-		repo.On("FindTokenByToken", expiredRt.Token).Return(expiredRt, nil)
+		repo.On("FindTokenByToken", mock.Anything, expiredRt.Token).Return(expiredRt, nil)
 
 		svc := newTestService(repo)
-		at, rt, err := svc.Refresh(expiredRt.Token)
+		at, rt, err := svc.Refresh(ctx, expiredRt.Token)
 
 		assert.Empty(t, at)
 		assert.Empty(t, rt)
@@ -467,10 +477,10 @@ func TestService_Refresh(t *testing.T) {
 	t.Run("repository.FindTokenByToken fails → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		dbErr := errors.New("db error")
-		repo.On("FindTokenByToken", "some-token").Return((*RefreshToken)(nil), dbErr)
+		repo.On("FindTokenByToken", mock.Anything, "some-token").Return((*RefreshToken)(nil), dbErr)
 
 		svc := newTestService(repo)
-		at, rt, err := svc.Refresh("some-token")
+		at, rt, err := svc.Refresh(ctx, "some-token")
 
 		assert.Empty(t, at)
 		assert.Empty(t, rt)
@@ -481,11 +491,11 @@ func TestService_Refresh(t *testing.T) {
 		repo := new(mockRepo)
 		dbErr := errors.New("db write error")
 		rt := stubRefreshToken("user-123")
-		repo.On("FindTokenByToken", rt.Token).Return(rt, nil)
-		repo.On("RotateRefreshToken", rt.Token, mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).Return(dbErr)
+		repo.On("FindTokenByToken", mock.Anything, rt.Token).Return(rt, nil)
+		repo.On("RotateRefreshToken", mock.Anything, rt.Token, mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).Return(dbErr)
 
 		svc := newTestService(repo)
-		at, newRt, err := svc.Refresh(rt.Token)
+		at, newRt, err := svc.Refresh(ctx, rt.Token)
 
 		assert.Empty(t, at)
 		assert.Empty(t, newRt)
