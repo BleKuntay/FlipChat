@@ -24,7 +24,7 @@ type ConversationStore interface {
 }
 
 type BlockChecker interface {
-	IsBlocked(ctx context.Context, a, b string) (bool, error)
+	IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error)
 }
 
 type Option func(*Service)
@@ -122,7 +122,7 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 		other = high
 	}
 
-	blocked, err := s.blockChecker.IsBlocked(ctx, userID, other)
+	blocked, err := s.blockChecker.IsBlockedEitherWay(ctx, userID, other)
 	if err != nil {
 		return nil, err
 	}
