@@ -44,7 +44,7 @@ func (m *mockConvStore) GetParticipants(ctx context.Context, conversationID stri
 
 type mockBlockChecker struct{ mock.Mock }
 
-func (m *mockBlockChecker) IsBlocked(ctx context.Context, a, b string) (bool, error) {
+func (m *mockBlockChecker) IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error) {
 	args := m.Called(ctx, a, b)
 	return args.Bool(0), args.Error(1)
 }
@@ -80,7 +80,7 @@ func TestService_SendMessage_HappyPath(t *testing.T) {
 	blks := new(mockBlockChecker)
 
 	convs.On("GetParticipants", ctx, convoID).Return(otherID, senderID, nil)
-	blks.On("IsBlocked", ctx, senderID, otherID).Return(false, nil)
+	blks.On("IsBlockedEitherWay", ctx, senderID, otherID).Return(false, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
 		return m.ConversationID == convoID &&
 			m.SenderID == senderID &&
@@ -136,7 +136,7 @@ func TestService_SendMessage_NonParticipant_ReturnsNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, apperr.ErrNotFound)
 
 	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
-	blks.AssertNotCalled(t, "IsBlocked", mock.Anything, mock.Anything, mock.Anything)
+	blks.AssertNotCalled(t, "IsBlockedEitherWay", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestService_SendMessage_BlockerSends_ReturnsForbidden(t *testing.T) {
@@ -153,7 +153,7 @@ func TestService_SendMessage_BlockerSends_ReturnsForbidden(t *testing.T) {
 	blks := new(mockBlockChecker)
 
 	convs.On("GetParticipants", ctx, convoID).Return(blockedID, blockerID, nil)
-	blks.On("IsBlocked", ctx, blockerID, blockedID).Return(true, nil)
+	blks.On("IsBlockedEitherWay", ctx, blockerID, blockedID).Return(true, nil)
 
 	svc := newTestService(repo, convs, blks)
 
@@ -178,7 +178,7 @@ func TestService_SendMessage_BlockedSends_ReturnsForbidden(t *testing.T) {
 	blks := new(mockBlockChecker)
 
 	convs.On("GetParticipants", ctx, convoID).Return(blockedID, blockerID, nil)
-	blks.On("IsBlocked", ctx, blockedID, blockerID).Return(true, nil)
+	blks.On("IsBlockedEitherWay", ctx, blockedID, blockerID).Return(true, nil)
 
 	svc := newTestService(repo, convs, blks)
 
@@ -203,7 +203,7 @@ func TestService_SendMessage_EmptyContent_ReturnsBadRequest(t *testing.T) {
 	blks := new(mockBlockChecker)
 
 	convs.On("GetParticipants", ctx, convoID).Return(otherID, senderID, nil)
-	blks.On("IsBlocked", ctx, senderID, otherID).Return(false, nil)
+	blks.On("IsBlockedEitherWay", ctx, senderID, otherID).Return(false, nil)
 
 	svc := newTestService(repo, convs, blks)
 
@@ -244,7 +244,7 @@ func TestService_SendMessage_ReplyToMessageInOtherConversation_ReturnsForbidden(
 	blks := new(mockBlockChecker)
 
 	convs.On("GetParticipants", ctx, convoID).Return(otherID, senderID, nil)
-	blks.On("IsBlocked", ctx, senderID, otherID).Return(false, nil)
+	blks.On("IsBlockedEitherWay", ctx, senderID, otherID).Return(false, nil)
 
 	repo.On("GetByID", ctx, replyToID).Return(&message.Message{
 		ID:             replyToID,
@@ -279,7 +279,7 @@ func TestService_SendMessage_ReplyToNonExistentMessage_ReturnsNotFound(t *testin
 	blks := new(mockBlockChecker)
 
 	convs.On("GetParticipants", ctx, convoID).Return(otherID, senderID, nil)
-	blks.On("IsBlocked", ctx, senderID, otherID).Return(false, nil)
+	blks.On("IsBlockedEitherWay", ctx, senderID, otherID).Return(false, nil)
 	repo.On("GetByID", ctx, replyToID).Return(nil, apperr.ErrNotFound)
 
 	replyTo := replyToID
@@ -311,7 +311,7 @@ func TestService_SendMessage_RepoCreateFails_ReturnsError(t *testing.T) {
 	dbErr := errors.New("connection refused")
 
 	convs.On("GetParticipants", ctx, convoID).Return(otherID, senderID, nil)
-	blks.On("IsBlocked", ctx, senderID, otherID).Return(false, nil)
+	blks.On("IsBlockedEitherWay", ctx, senderID, otherID).Return(false, nil)
 	repo.On("Create", ctx, mock.AnythingOfType("*message.Message")).Return(dbErr)
 
 	svc := newTestService(repo, convs, blks)
