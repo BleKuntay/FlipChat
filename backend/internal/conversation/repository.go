@@ -131,3 +131,18 @@ func (r *Repository) Create(ctx context.Context, requesterID, lowID, highID stri
 
 	return &response, nil
 }
+
+func (r *Repository) GetParticipants(ctx context.Context, conversationID string) (userLowID, userHighID string, err error) {
+	const q = "SELECT user_low_id, user_high_id FROM conversations WHERE id = $1"
+
+	var conversation Conversation
+	if err := r.db.GetContext(ctx, &conversation, q, conversationID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", apperr.ErrNotFound
+		}
+
+		return "", "", err
+	}
+
+	return conversation.UserLowID, conversation.UserHighID, nil
+}
