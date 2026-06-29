@@ -1,0 +1,89 @@
+paths:
+  /conversations:
+    get:
+      tags: [conversations]
+      summary: List all conversations for current user
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '../openapi.yaml#/components/schemas/ConversationResponse'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+    post:
+      tags: [conversations]
+      summary: Get or create a conversation with a user
+      description: |
+        Returns existing conversation if one already exists between the two users,
+        or creates a new one. Response status indicates which occurred:
+        - `201` — newly created
+        - `200` — already existed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_user_id]
+              properties:
+                target_user_id:
+                  type: string
+                  format: uuid
+                  example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        "201":
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ConversationResponse'
+        "200":
+          description: Existing conversation returned
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ConversationResponse'
+        "400":
+          $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /conversations/{id}:
+    get:
+      tags: [conversations]
+      summary: Get a single conversation by ID
+      description: Only accessible by participants of the conversation.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ConversationResponse'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'

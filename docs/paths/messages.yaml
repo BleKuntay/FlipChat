@@ -1,0 +1,104 @@
+paths:
+  /conversations/{id}/messages:
+    get:
+      tags: [messages]
+      summary: List messages in a conversation
+      description: |
+        Returns messages newest-first. Use `cursor` from previous response
+        to paginate backward (older messages).
+        Only accessible by participants of the conversation.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation ID
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Message ID to paginate from (exclusive, returns older messages)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '../openapi.yaml#/components/schemas/MessageResponse'
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    description: Pass this as cursor to fetch older messages
+                  has_more:
+                    type: boolean
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+    post:
+      tags: [messages]
+      summary: Send a message in a conversation
+      description: |
+        Sends a text message. Optionally quote-reply another message
+        in the same conversation via `reply_to_id`.
+        Only participants can send. Blocked users cannot send.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  example: "halo!"
+                  description: Message text, must not be empty or whitespace only
+                reply_to_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: ID of the message being replied to (must be in same conversation)
+      responses:
+        "201":
+          description: Message sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/MessageResponse'
+        "400":
+          $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'

@@ -1,0 +1,13 @@
+.idea/
+*.iw
+*.iws
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OpenAPI generated files
+docs/openapi.bundled.yaml
+docs/openapi.html

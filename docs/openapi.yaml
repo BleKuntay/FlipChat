@@ -1,0 +1,309 @@
+openapi: "3.1.0"
+
+info:
+  title: FlipChat API
+  version: "0.1.0"
+  description: |
+    REST API for FlipChat — a real-time one-to-one chat application.
+
+    **Versioning:** follows SemVer 0.y.z during development.
+    Minor version increments (0.1.0 → 0.2.0) correspond to feature phases.
+    1.0.0 marks the first stable, publicly committed API contract.
+
+servers:
+  - url: http://localhost:8080/v1
+    description: Local development
+  - url: https://api.flipchat.app/v1
+    description: Production (placeholder — not yet deployed)
+
+tags:
+  - name: auth
+    description: Registration, login, logout, and token refresh
+  - name: users
+    description: User profile management and search
+  - name: friends
+    description: Friend requests and friendship management
+  - name: blocks
+    description: Block and unblock users
+  - name: conversations
+    description: One-to-one conversation management
+  - name: messages
+    description: Sending and retrieving messages within a conversation
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "invalid or expired token"
+
+    Forbidden:
+      description: Action not permitted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "forbidden"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "not found"
+
+    Conflict:
+      description: Resource already exists or state conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "conflict"
+
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "bad request"
+
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "internal server error"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: "not found"
+
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        username:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserDetail:
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          properties:
+            bio:
+              type: string
+              nullable: true
+            language:
+              type: string
+              example: "en"
+            created_at:
+              type: string
+              format: date-time
+
+    MeResponse:
+      allOf:
+        - $ref: '#/components/schemas/UserDetail'
+        - type: object
+          properties:
+            email:
+              type: string
+              format: email
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/MeResponse'
+
+    FriendResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        full_name:
+          type: string
+        friend_since:
+          type: string
+          format: date-time
+
+    FriendRequestResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        full_name:
+          type: string
+        direction:
+          type: string
+          enum: [sent, received, accepted]
+        status:
+          type: string
+          enum: [pending, accepted]
+        created_at:
+          type: string
+          format: date-time
+
+    BlockedUserResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        blocked_at:
+          type: string
+          format: date-time
+
+    ConversationResponse:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: Display name of the other participant
+        username:
+          type: string
+          description: Username of the other participant
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        last_message_preview:
+          type: string
+          nullable: true
+          description: Content of the most recent message
+        last_message_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    MessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUIDv7 — time-ordered, used as pagination cursor
+        conversation_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+          nullable: true
+        reply_to_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+          description: Reserved for future use (attachments, Phase 2)
+        is_edited:
+          type: boolean
+          default: false
+        created_at:
+          type: string
+          format: date-time
+
+paths:
+  /auth/register:
+    $ref: './paths/auth.yaml#/paths/~1auth~1register'
+  /auth/login:
+    $ref: './paths/auth.yaml#/paths/~1auth~1login'
+  /auth/logout:
+    $ref: './paths/auth.yaml#/paths/~1auth~1logout'
+  /auth/refresh:
+    $ref: './paths/auth.yaml#/paths/~1auth~1refresh'
+
+  /users/me:
+    $ref: './paths/users.yaml#/paths/~1users~1me'
+  /users/me/email:
+    $ref: './paths/users.yaml#/paths/~1users~1me~1email'
+  /users/me/password:
+    $ref: './paths/users.yaml#/paths/~1users~1me~1password'
+  /users/search:
+    $ref: './paths/users.yaml#/paths/~1users~1search'
+  /users/{id}:
+    $ref: './paths/users.yaml#/paths/~1users~1{id}'
+
+  /friends:
+    $ref: './paths/friends.yaml#/paths/~1friends'
+  /friends/requests:
+    $ref: './paths/friends.yaml#/paths/~1friends~1requests'
+  /friends/{id}:
+    $ref: './paths/friends.yaml#/paths/~1friends~1{id}'
+  /friends/requests/{id}/accept:
+    $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}~1accept'
+  /friends/requests/{id}/decline:
+    $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}~1decline'
+
+  /blocks:
+    $ref: './paths/blocks.yaml#/paths/~1blocks'
+  /blocks/{id}:
+    $ref: './paths/blocks.yaml#/paths/~1blocks~1{id}'
+
+  /conversations:
+    $ref: './paths/conversations.yaml#/paths/~1conversations'
+  /conversations/{id}:
+    $ref: './paths/conversations.yaml#/paths/~1conversations~1{id}'
+
+  /conversations/{id}/messages:
+    $ref: './paths/messages.yaml#/paths/~1conversations~1{id}~1messages'
