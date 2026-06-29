@@ -1,0 +1,202 @@
+paths:
+  /friends:
+    get:
+      tags: [friends]
+      summary: List all friends
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous page for pagination
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of friends
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  friends:
+                    type: array
+                    items:
+                      $ref: '../openapi.yaml#/components/schemas/FriendResponse'
+                  next_cursor:
+                    type: string
+                    nullable: true
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /friends/requests:
+    get:
+      tags: [friends]
+      summary: List all pending friend requests (sent and received)
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of pending friend requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '../openapi.yaml#/components/schemas/FriendRequestResponse'
+                  next_cursor:
+                    type: string
+                    nullable: true
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /friends/{id}:
+    get:
+      tags: [friends]
+      summary: Get friendship status with a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Friendship status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [none, pending_sent, pending_received, accepted]
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+    post:
+      tags: [friends]
+      summary: Send a friend request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Friend request sent
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/FriendRequestResponse'
+        "400":
+          $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "409":
+          $ref: '../openapi.yaml#/components/responses/Conflict'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+    delete:
+      tags: [friends]
+      summary: Unfriend a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Unfriended successfully
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /friends/requests/{id}/accept:
+    put:
+      tags: [friends]
+      summary: Accept a friend request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Friend request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/FriendResponse'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "409":
+          $ref: '../openapi.yaml#/components/responses/Conflict'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /friends/requests/{id}/decline:
+    delete:
+      tags: [friends]
+      summary: Decline a friend request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Friend request declined
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'

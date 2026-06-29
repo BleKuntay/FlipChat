@@ -1,0 +1,128 @@
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, username, email, password]
+              properties:
+                name:
+                  type: string
+                  example: "Test User"
+                username:
+                  type: string
+                  example: "testuser"
+                email:
+                  type: string
+                  format: email
+                  example: "test@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "Secret123"
+                language:
+                  type: string
+                  example: "en"
+                  default: "en"
+      responses:
+        "201":
+          description: User registered successfully
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh token cookie
+              schema:
+                type: string
+                example: "refresh_token=eyJ...; HttpOnly; Path=/"
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/AuthResponse'
+        "400":
+          $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "409":
+          $ref: '../openapi.yaml#/components/responses/Conflict'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "test@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "Secret123"
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh token cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/AuthResponse'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout current session
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Logged out successfully
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token using refresh token cookie
+      security: []
+      responses:
+        "200":
+          description: New access token issued
+          headers:
+            Set-Cookie:
+              description: Rotated refresh token cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
