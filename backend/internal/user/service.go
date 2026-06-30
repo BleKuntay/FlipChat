@@ -2,9 +2,10 @@ package user
 
 import (
 	"context"
-
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type RepositoryInterface interface {
@@ -20,13 +21,22 @@ type BlockChecker interface {
 	IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error)
 }
 
-type Service struct {
-	repository   RepositoryInterface
-	blockChecker BlockChecker
+type PresenceChecker interface {
+	IsOnline(ctx context.Context, userID string) (bool, error)
 }
 
-func NewService(repository RepositoryInterface, blockChecker BlockChecker) *Service {
-	return &Service{repository: repository, blockChecker: blockChecker}
+type Service struct {
+	repository      RepositoryInterface
+	blockChecker    BlockChecker
+	presenceChecker PresenceChecker
+}
+
+func NewService(repository RepositoryInterface, blockChecker BlockChecker, presenceChecker PresenceChecker) *Service {
+	return &Service{
+		repository:      repository,
+		blockChecker:    blockChecker,
+		presenceChecker: presenceChecker,
+	}
 }
 
 func (s *Service) Me(ctx context.Context, userID string) (*MeResponse, error) {
@@ -124,7 +134,7 @@ func (s *Service) DeleteAccount(ctx context.Context, userID string) error {
 	return s.repository.DeleteByID(ctx, userID)
 }
 
-func (s *Service) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*User, error) {
+func (s *Service) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*Response, error) {
 	user, err := s.repository.FindByID(ctx, param.ID)
 	if err != nil {
 		return nil, err
@@ -138,7 +148,24 @@ func (s *Service) FindUserByID(ctx context.Context, requesterID string, param *G
 		return nil, apperr.ErrNotFound
 	}
 
-	return user, nil
+	isOnline, err := s.presenceChecker.IsOnline(ctx, param.ID)
+	if err != nil {
+		isOnline = false
+	}
+
+	response := &Response{
+		ID:         user.ID,
+		Name:       user.Name,
+		Username:   user.Username,
+		Bio:        user.Bio,
+		Language:   user.Language,
+		AvatarURL:  user.AvatarURL,
+		IsOnline:   isOnline,
+		LastSeenAt: user.LastSeenAt,
+		CreatedAt:  user.CreatedAt,
+	}
+
+	return response, nil
 }
 
 func (s *Service) Search(ctx context.Context, userID string, query *SearchQuery) (*SearchResponse, error) {
@@ -162,6 +189,16 @@ func (s *Service) Search(ctx context.Context, userID string, query *SearchQuery)
 		summaries = summaries[:query.Limit]
 		cursor := summaries[len(summaries)-1].ID
 		nextCursor = &cursor
+	}
+
+	logger.Debug("debug summaries total", zap.Int("count", len(summaries)))
+
+	for i := range summaries {
+		online, err := s.presenceChecker.IsOnline(ctx, summaries[i].ID)
+		if err == nil {
+			summaries[i].IsOnline = online
+			logger.Debug("set online", zap.String("user_id", summaries[i].ID), zap.Bool("online", online))
+		}
 	}
 
 	return &SearchResponse{

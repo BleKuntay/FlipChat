@@ -7,8 +7,10 @@ import (
 	"github.com/BleKuntay/FlipChat/backend/internal/conversation"
 	"github.com/BleKuntay/FlipChat/backend/internal/db/migration"
 	"github.com/BleKuntay/FlipChat/backend/internal/db/postgres"
+	rdb "github.com/BleKuntay/FlipChat/backend/internal/db/redis"
 	"github.com/BleKuntay/FlipChat/backend/internal/friend"
 	"github.com/BleKuntay/FlipChat/backend/internal/message"
+	"github.com/BleKuntay/FlipChat/backend/internal/presence"
 	"github.com/BleKuntay/FlipChat/backend/internal/user"
 	"github.com/BleKuntay/FlipChat/backend/pkg/jwt"
 	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
@@ -17,6 +19,7 @@ import (
 	fiberLogger "github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -31,8 +34,10 @@ func main() {
 	db := setupPostgres()
 	applyMigration()
 
+	redisClient := rdb.Connect()
+
 	app := setupApp()
-	registerRoutes(app, db)
+	registerRoutes(app, db, redisClient)
 
 	logger.Info("server starting",
 		zap.String("env", config.App.AppEnv),
@@ -44,7 +49,10 @@ func main() {
 	}
 }
 
-func registerRoutes(app *fiber.App, db *sqlx.DB) {
+func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
+	// ── infrastructure ────────────────────────────────────────────────────────
+	presenceStore := presence.NewStore(redisClient, config.App.PresenceTTL)
+
 	// ── repositories ─────────────────────────────────────────────────────────
 	authRepo := auth.NewRepository(db)
 	blockRepo := block.NewRepository(db)
@@ -56,7 +64,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB) {
 	// ── services ──────────────────────────────────────────────────────────────
 	authSvc := auth.NewService(authRepo)
 	blockSvc := block.NewService(blockRepo)
-	userSvc := user.NewService(userRepo, blockSvc)
+	userSvc := user.NewService(userRepo, blockSvc, presenceStore)
 	friendSvc := friend.NewService(friendRepo, blockSvc)
 	conversationSvc := conversation.NewService(conversationRepo, blockSvc)
 	messageSvc := message.NewService(messageRepo, conversationRepo, blockSvc)

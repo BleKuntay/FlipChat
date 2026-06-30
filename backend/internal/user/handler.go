@@ -14,7 +14,7 @@ type ServiceInterface interface {
 	UpdateEmail(ctx context.Context, userID string, req *UpdateEmailRequest) (*UpdateEmailResponse, error)
 	ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error
 	DeleteAccount(ctx context.Context, userID string) error
-	FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*User, error)
+	FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*Response, error)
 	Search(ctx context.Context, userID string, query *SearchQuery) (*SearchResponse, error)
 }
 

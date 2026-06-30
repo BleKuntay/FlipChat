@@ -53,6 +53,7 @@ type Summary struct {
 	Name       string     `json:"name"`
 	Username   string     `json:"username"`
 	AvatarURL  *string    `json:"avatar_url"`
+	IsOnline   bool       `json:"is_online"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 }
 
@@ -63,6 +64,7 @@ type Response struct {
 	Bio        *string    `json:"bio"`
 	Language   string     `json:"language"`
 	AvatarURL  *string    `json:"avatar_url"`
+	IsOnline   bool       `json:"is_online"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
