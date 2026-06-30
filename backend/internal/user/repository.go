@@ -94,8 +94,17 @@ func (r *Repository) UpdateEmail(ctx context.Context, userID string, request *Up
 func (r *Repository) UpdatePassword(ctx context.Context, userID, hashedPassword string) error {
 	query := "UPDATE users SET password = $1 WHERE id = $2"
 
-	if _, err := r.db.ExecContext(ctx, query, hashedPassword, userID); err != nil {
+	res, err := r.db.ExecContext(ctx, query, hashedPassword, userID)
+	if err != nil {
 		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperr.ErrNotFound
 	}
 
 	return nil
@@ -104,8 +113,17 @@ func (r *Repository) UpdatePassword(ctx context.Context, userID, hashedPassword 
 func (r *Repository) DeleteByID(ctx context.Context, userID string) error {
 	query := "DELETE FROM users WHERE id = $1"
 
-	if _, err := r.db.ExecContext(ctx, query, userID); err != nil {
+	res, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
 		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperr.ErrNotFound
 	}
 
 	return nil

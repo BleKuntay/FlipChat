@@ -285,13 +285,11 @@ func TestRepository_UpdatePassword(t *testing.T) {
 		assert.Equal(t, "new-hash", storedPassword)
 	})
 
-	// BUG DOCUMENTED: UpdatePassword does not check rows affected.
-	// Silent success even if user does not exist.
-	t.Run("non-existent ID does not return error (silent no-op)", func(t *testing.T) {
+	// FIXED: UpdatePassword now checks rows affected.
+	t.Run("non-existent ID returns ErrNotFound", func(t *testing.T) {
 		err := repo.UpdatePassword(ctx, "00000000-0000-0000-0000-000000000000", "new-hash")
 
-		// Currently: no error — to fix, check rows affected and return ErrUserNotFound
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 }
 
@@ -317,13 +315,11 @@ func TestRepository_DeleteByID(t *testing.T) {
 		assert.Equal(t, 0, count)
 	})
 
-	// BUG DOCUMENTED: DeleteByID does not check rows affected.
-	// Silent success even if user does not exist.
-	t.Run("non-existent ID does not return error (silent no-op)", func(t *testing.T) {
+	// FIXED: DeleteByID now checks rows affected.
+	t.Run("non-existent ID returns ErrNotFound", func(t *testing.T) {
 		err := repo.DeleteByID(ctx, "00000000-0000-0000-0000-000000000000")
 
-		// Currently: no error — to fix, check rows affected and return ErrUserNotFound
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 }
 
