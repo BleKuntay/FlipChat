@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: fc_app
     restart: unless-stopped
+    mem_limit: 256m
     ports:
       - "8080:8080"
     env_file:
@@ -17,6 +18,7 @@ services:
     image: postgres:16-alpine
     container_name: fc_postgres
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: fc_user
       POSTGRES_PASSWORD: fc_password
