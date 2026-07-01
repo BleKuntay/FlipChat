@@ -14,10 +14,15 @@ type Message struct {
 	Metadata       *json.RawMessage `db:"metadata"`
 	IsEdited       bool             `db:"is_edited"`
 	CreatedAt      time.Time        `db:"created_at"`
+	UpdatedAt      *time.Time       `db:"updated_at"`
+	ReadAt         *time.Time       `db:"read_at"`
+	DeletedAt      *time.Time       `db:"deleted_at"`
+	DeletedBy      *string          `db:"deleted_by"`
 }
 
 type URIParams struct {
 	ConversationID string `uri:"id"`
+	MessageID      string `uri:"msg_id"`
 }
 
 type ListQuery struct {
@@ -30,6 +35,10 @@ type SendRequest struct {
 	ReplyToID *string `json:"reply_to_id"`
 }
 
+type EditRequest struct {
+	Content string `json:"content"`
+}
+
 type Response struct {
 	ID             string           `json:"id"`
 	ConversationID string           `json:"conversation_id"`
@@ -38,7 +47,10 @@ type Response struct {
 	ReplyToID      *string          `json:"reply_to_id,omitempty"`
 	Metadata       *json.RawMessage `json:"metadata,omitempty"`
 	IsEdited       bool             `json:"is_edited"`
+	IsDeleted      bool             `json:"is_deleted"`
 	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      *time.Time       `json:"updated_at,omitempty"`
+	ReadAt         *time.Time       `json:"read_at,omitempty"`
 }
 
 type ListResponse struct {
