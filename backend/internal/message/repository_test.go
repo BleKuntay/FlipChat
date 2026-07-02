@@ -22,10 +22,10 @@ func insertUser(t *testing.T, db *sqlx.DB) string {
 	t.Helper()
 	var id string
 	err := db.QueryRow(`
-        INSERT INTO users (name, username, email, password)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-    `, "Test User", "user_"+uuid.NewString()[:8], uuid.NewString()+"@example.com", "hashed").Scan(&id)
+		INSERT INTO users (name, username, email, password)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, "Test User", "user_"+uuid.NewString()[:8], uuid.NewString()+"@example.com", "hashed").Scan(&id)
 	require.NoError(t, err)
 	return id
 }
@@ -37,10 +37,10 @@ func insertConversation(t *testing.T, db *sqlx.DB, userLowID, userHighID string)
 	}
 	var id string
 	err := db.QueryRow(`
-        INSERT INTO conversations (id, user_low_id, user_high_id)
-        VALUES ($1, $2, $3)
-        RETURNING id
-    `, uuid.New().String(), userLowID, userHighID).Scan(&id)
+		INSERT INTO conversations (id, user_low_id, user_high_id)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, uuid.New().String(), userLowID, userHighID).Scan(&id)
 	require.NoError(t, err)
 	return id
 }
@@ -48,13 +48,22 @@ func insertConversation(t *testing.T, db *sqlx.DB, userLowID, userHighID string)
 func insertMessage(t *testing.T, db *sqlx.DB, m *message.Message) {
 	t.Helper()
 	_, err := db.Exec(`
-        INSERT INTO messages (id, conversation_id, sender_id, content, reply_to_id, metadata, is_edited, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    `, m.ID, m.ConversationID, m.SenderID, m.Content, m.ReplyToID, m.Metadata, m.IsEdited, m.CreatedAt)
+		INSERT INTO messages (id, conversation_id, sender_id, content, reply_to_id, metadata, is_edited, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, m.ID, m.ConversationID, m.SenderID, m.Content, m.ReplyToID, m.Metadata, m.IsEdited, m.CreatedAt)
 	require.NoError(t, err)
 }
 
-func strPtr(s string) *string { return &s }
+func newMsg(convoID, senderID string) *message.Message {
+	v7, _ := uuid.NewV7()
+	return &message.Message{
+		ID:             v7.String(),
+		ConversationID: convoID,
+		SenderID:       senderID,
+		Content:        strPtr("hello"),
+		CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
+	}
+}
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
@@ -68,55 +77,30 @@ func TestRepository_Create(t *testing.T) {
 	convoID := insertConversation(t, db, userA, userB)
 
 	t.Run("inserts message and can be retrieved", func(t *testing.T) {
-		v7, _ := uuid.NewV7()
-		content := "halo!"
-		m := &message.Message{
-			ID:             v7.String(),
-			ConversationID: convoID,
-			SenderID:       userA,
-			Content:        &content,
-			CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
-		}
-
-		err := repo.Create(ctx, m)
-		require.NoError(t, err)
+		m := newMsg(convoID, userA)
+		require.NoError(t, repo.Create(ctx, m))
 
 		got, err := repo.GetByID(ctx, m.ID)
 		require.NoError(t, err)
 		assert.Equal(t, m.ID, got.ID)
 		assert.Equal(t, convoID, got.ConversationID)
 		assert.Equal(t, userA, got.SenderID)
-		assert.Equal(t, &content, got.Content)
+		assert.Equal(t, m.Content, got.Content)
 		assert.False(t, got.IsEdited)
 		assert.Nil(t, got.ReplyToID)
+		assert.Nil(t, got.DeletedAt)
+		assert.Nil(t, got.UpdatedAt)
 	})
 
 	t.Run("inserts message with reply_to_id", func(t *testing.T) {
-		v7a, _ := uuid.NewV7()
-		v7b, _ := uuid.NewV7()
-		content := "original"
-		reply := "reply!"
-
-		original := &message.Message{
-			ID:             v7a.String(),
-			ConversationID: convoID,
-			SenderID:       userA,
-			Content:        &content,
-			CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
-		}
+		original := newMsg(convoID, userA)
 		require.NoError(t, repo.Create(ctx, original))
 
-		replyMsg := &message.Message{
-			ID:             v7b.String(),
-			ConversationID: convoID,
-			SenderID:       userB,
-			Content:        &reply,
-			ReplyToID:      &original.ID,
-			CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
-		}
-		require.NoError(t, repo.Create(ctx, replyMsg))
+		reply := newMsg(convoID, userB)
+		reply.ReplyToID = &original.ID
+		require.NoError(t, repo.Create(ctx, reply))
 
-		got, err := repo.GetByID(ctx, replyMsg.ID)
+		got, err := repo.GetByID(ctx, reply.ID)
 		require.NoError(t, err)
 		require.NotNil(t, got.ReplyToID)
 		assert.Equal(t, original.ID, *got.ReplyToID)
@@ -144,22 +128,18 @@ func TestRepository_GetByID(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("returns correct message for existing ID", func(t *testing.T) {
-		v7, _ := uuid.NewV7()
-		content := "test content"
-		m := &message.Message{
-			ID:             v7.String(),
-			ConversationID: convoID,
-			SenderID:       userA,
-			Content:        &content,
-			CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
-		}
+	t.Run("returns correct message with all lifecycle columns", func(t *testing.T) {
+		m := newMsg(convoID, userA)
 		insertMessage(t, db, m)
 
 		got, err := repo.GetByID(ctx, m.ID)
 		require.NoError(t, err)
 		assert.Equal(t, m.ID, got.ID)
 		assert.Equal(t, convoID, got.ConversationID)
+		assert.Nil(t, got.UpdatedAt)
+		assert.Nil(t, got.ReadAt)
+		assert.Nil(t, got.DeletedAt)
+		assert.Nil(t, got.DeletedBy)
 	})
 }
 
@@ -174,28 +154,18 @@ func TestRepository_ListByConversation(t *testing.T) {
 	userB := insertUser(t, db)
 	convoID := insertConversation(t, db, userA, userB)
 
-	// Seed 5 messages in order
 	var msgIDs []string
 	for i := 0; i < 5; i++ {
-		v7, _ := uuid.NewV7()
-		content := "msg"
-		m := &message.Message{
-			ID:             v7.String(),
-			ConversationID: convoID,
-			SenderID:       userA,
-			Content:        &content,
-			CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
-		}
+		m := newMsg(convoID, userA)
 		insertMessage(t, db, m)
 		msgIDs = append(msgIDs, m.ID)
-		time.Sleep(2 * time.Millisecond) // Ensure UUIDv7 ordering is deterministic
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	t.Run("no cursor returns newest first", func(t *testing.T) {
 		msgs, err := repo.ListByConversation(ctx, convoID, "", 10)
 		require.NoError(t, err)
 		assert.Len(t, msgs, 5)
-		// Newest first — last inserted message should be first in response
 		assert.Equal(t, msgIDs[4], msgs[0].ID)
 		assert.Equal(t, msgIDs[0], msgs[4].ID)
 	})
@@ -207,22 +177,127 @@ func TestRepository_ListByConversation(t *testing.T) {
 	})
 
 	t.Run("cursor returns only older messages", func(t *testing.T) {
-		// cursor = msgIDs[3] → only return msgIDs[0..2]
 		msgs, err := repo.ListByConversation(ctx, convoID, msgIDs[3], 10)
 		require.NoError(t, err)
 		assert.Len(t, msgs, 3)
 		for _, m := range msgs {
-			assert.Less(t, m.ID, msgIDs[3], "all results must be older than cursor")
+			assert.Less(t, m.ID, msgIDs[3])
 		}
 	})
 
-	t.Run("empty conversation returns empty slice", func(t *testing.T) {
+	t.Run("deleted messages are included with is_deleted true", func(t *testing.T) {
 		userC := insertUser(t, db)
 		userD := insertUser(t, db)
 		emptyConvo := insertConversation(t, db, userC, userD)
 
+		m := newMsg(emptyConvo, userC)
+		insertMessage(t, db, m)
+
+		// soft delete directly via SQL
+		_, err := db.Exec(`UPDATE messages SET content = NULL, deleted_at = now(), deleted_by = $1 WHERE id = $2`, userC, m.ID)
+		require.NoError(t, err)
+
+		msgs, err := repo.ListByConversation(ctx, emptyConvo, "", 10)
+		require.NoError(t, err)
+		require.Len(t, msgs, 1)
+		assert.Nil(t, msgs[0].Content)
+		assert.NotNil(t, msgs[0].DeletedAt)
+	})
+
+	t.Run("empty conversation returns empty slice", func(t *testing.T) {
+		userE := insertUser(t, db)
+		userF := insertUser(t, db)
+		emptyConvo := insertConversation(t, db, userE, userF)
+
 		msgs, err := repo.ListByConversation(ctx, emptyConvo, "", 10)
 		require.NoError(t, err)
 		assert.Empty(t, msgs)
+	})
+}
+
+// ── EditMessage ───────────────────────────────────────────────────────────────
+
+func TestRepository_EditMessage(t *testing.T) {
+	db := testhelper.NewTestDB(t)
+	repo := message.NewRepository(db)
+	ctx := context.Background()
+
+	userA := insertUser(t, db)
+	userB := insertUser(t, db)
+	convoID := insertConversation(t, db, userA, userB)
+
+	t.Run("updates content, sets is_edited and updated_at", func(t *testing.T) {
+		m := newMsg(convoID, userA)
+		insertMessage(t, db, m)
+
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		m.Content = strPtr("edited content")
+		m.IsEdited = true
+		m.UpdatedAt = &now
+
+		require.NoError(t, repo.EditMessage(ctx, m))
+
+		got, err := repo.GetByID(ctx, m.ID)
+		require.NoError(t, err)
+		require.NotNil(t, got.Content)
+		assert.Equal(t, "edited content", *got.Content)
+		assert.True(t, got.IsEdited)
+		require.NotNil(t, got.UpdatedAt)
+	})
+
+	t.Run("returns ErrNotFound for non-existent message", func(t *testing.T) {
+		v7, _ := uuid.NewV7()
+		now := time.Now()
+		ghost := &message.Message{
+			ID:        v7.String(),
+			Content:   strPtr("x"),
+			IsEdited:  true,
+			UpdatedAt: &now,
+		}
+		err := repo.EditMessage(ctx, ghost)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
+	})
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+func TestRepository_Delete(t *testing.T) {
+	db := testhelper.NewTestDB(t)
+	repo := message.NewRepository(db)
+	ctx := context.Background()
+
+	userA := insertUser(t, db)
+	userB := insertUser(t, db)
+	convoID := insertConversation(t, db, userA, userB)
+
+	t.Run("sets content null, deleted_at, deleted_by", func(t *testing.T) {
+		m := newMsg(convoID, userA)
+		insertMessage(t, db, m)
+
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		m.Content = nil
+		m.DeletedAt = &now
+		m.DeletedBy = &userA
+
+		require.NoError(t, repo.Delete(ctx, m))
+
+		got, err := repo.GetByID(ctx, m.ID)
+		require.NoError(t, err)
+		assert.Nil(t, got.Content)
+		require.NotNil(t, got.DeletedAt)
+		require.NotNil(t, got.DeletedBy)
+		assert.Equal(t, userA, *got.DeletedBy)
+	})
+
+	t.Run("returns ErrNotFound for non-existent message", func(t *testing.T) {
+		v7, _ := uuid.NewV7()
+		now := time.Now()
+		ghost := &message.Message{
+			ID:        v7.String(),
+			DeletedAt: &now,
+			DeletedBy: &userA,
+		}
+		err := repo.Delete(ctx, ghost)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 }
