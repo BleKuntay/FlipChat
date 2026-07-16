@@ -21,6 +21,7 @@ type RepositoryInterface interface {
 	ListByConversation(ctx context.Context, conversationID, cursor string, limit int) ([]*Message, error)
 	EditMessage(ctx context.Context, message *Message) error
 	Delete(ctx context.Context, message *Message) error
+	MarkAsRead(ctx context.Context, message *Message) error
 }
 
 type ConversationStore interface {
@@ -219,6 +220,39 @@ func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, mes
 
 	response := toResponse(msg)
 	s.publisher.FanOutToConversation(ctx, userID, other, "message.deleted", response)
+
+	return response, nil
+}
+
+func (s *Service) MarkAsRead(ctx context.Context, userID, conversationID, messageID string) (*Response, error) {
+	other, err := s.otherParticipant(ctx, userID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	message, err := s.fetchMessageInConversation(ctx, messageID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if message.SenderID == userID {
+		return nil, apperr.ErrForbidden
+	}
+	if message.ReadAt != nil {
+		return toResponse(message), nil
+	}
+	if message.DeletedAt != nil {
+		return nil, apperr.ErrForbidden
+	}
+
+	now := s.clock()
+	message.ReadAt = &now
+
+	if err := s.repository.MarkAsRead(ctx, message); err != nil {
+		return nil, err
+	}
+
+	response := toResponse(message)
+	s.publisher.FanOutToConversation(ctx, userID, other, "message.read", response)
 
 	return response, nil
 }

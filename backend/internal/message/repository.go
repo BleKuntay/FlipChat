@@ -112,6 +112,25 @@ func (r *Repository) Delete(ctx context.Context, message *Message) error {
 	return nil
 }
 
+func (r *Repository) MarkAsRead(ctx context.Context, message *Message) error {
+	q := "UPDATE messages SET read_at = $1 WHERE id = $2"
+
+	res, err := r.db.ExecContext(ctx, q, message.ReadAt, message.ID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperr.ErrNotFound
+	}
+
+	return nil
+}
+
 func stringToNullable(s string) *string {
 	if s == "" {
 		return nil

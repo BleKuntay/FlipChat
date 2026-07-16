@@ -11,6 +11,7 @@ type ServiceInterface interface {
 	SendMessage(ctx context.Context, userID, conversationID string, request SendRequest) (*Response, error)
 	EditMessage(ctx context.Context, userID, conversationID, messageID string, request EditRequest) (*Response, error)
 	DeleteMessage(ctx context.Context, userID, conversationID, messageID string) (*Response, error)
+	MarkAsRead(ctx context.Context, userID, conversationID, messageID string) (*Response, error)
 }
 
 type Handler struct {
@@ -24,6 +25,7 @@ func NewHandler(service ServiceInterface) *Handler {
 func (h *Handler) RegisterRoutes(router fiber.Router) {
 	router.Post("/:id/messages", h.SendMessage)
 	router.Get("/:id/messages", h.ListMessages)
+	router.Patch("/:id/messages/:msg_id/read", h.MarkAsRead)
 	router.Patch("/:id/messages/:msg_id", h.EditMessage)
 	router.Delete("/:id/messages/:msg_id", h.DeleteMessage)
 }
@@ -104,6 +106,23 @@ func (h *Handler) DeleteMessage(c fiber.Ctx) error {
 	}
 
 	response, err := h.service.DeleteMessage(ctx, userID, uri.ConversationID, uri.MessageID)
+	if err != nil {
+		return httputil.ErrorStatus(c, err)
+	}
+
+	return c.JSON(response)
+}
+
+func (h *Handler) MarkAsRead(c fiber.Ctx) error {
+	ctx := c.Context()
+	userID := fiber.Locals[string](c, "user_id")
+
+	uri := new(URIParams)
+	if err := c.Bind().URI(uri); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	response, err := h.service.MarkAsRead(ctx, userID, uri.ConversationID, uri.MessageID)
 	if err != nil {
 		return httputil.ErrorStatus(c, err)
 	}
