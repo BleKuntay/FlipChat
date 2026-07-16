@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/jmoiron/sqlx"
@@ -167,4 +168,23 @@ func (r *Repository) Search(ctx context.Context, userID, q, cursor string, limit
 	}
 
 	return summaries, nil
+}
+
+func (r *Repository) UpdateLastSeen(ctx context.Context, userID string, t time.Time) error {
+	q := "UPDATE users SET last_seen_at = $1 WHERE id = $2"
+
+	res, err := r.db.ExecContext(ctx, q, t, userID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperr.ErrNotFound
+	}
+
+	return nil
 }

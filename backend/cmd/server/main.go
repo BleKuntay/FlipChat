@@ -78,7 +78,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	friendHandler := friend.NewHandler(friendSvc)
 	conversationHandler := conversation.NewHandler(conversationSvc)
 	messageHandler := message.NewHandler(messageSvc)
-	wsHandler := ws.NewHandler(hub, presenceStore, conversationRepo)
+	wsHandler := ws.NewHandler(hub, presenceStore, conversationRepo, userRepo)
 
 	// ── routes ────────────────────────────────────────────────────────────────
 	v1 := app.Group("/v1")

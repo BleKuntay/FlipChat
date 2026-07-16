@@ -20,13 +20,19 @@ var upgrader = websocket.FastHTTPUpgrader{
 
 // Handler handles WebSocket upgrade requests.
 type Handler struct {
-	hub          *Hub
-	presence     PresenceSetter
-	partnerStore PartnerStore
+	hub            *Hub
+	presence       PresenceSetter
+	partnerStore   PartnerStore
+	lastSeenUpdate LastSeenUpdater
 }
 
-func NewHandler(hub *Hub, presence PresenceSetter, partnerStore PartnerStore) *Handler {
-	return &Handler{hub: hub, presence: presence, partnerStore: partnerStore}
+func NewHandler(hub *Hub, presence PresenceSetter, partnerStore PartnerStore, lastSeenUpdater LastSeenUpdater) *Handler {
+	return &Handler{
+		hub:            hub,
+		presence:       presence,
+		partnerStore:   partnerStore,
+		lastSeenUpdate: lastSeenUpdater,
+	}
 }
 
 func (h *Handler) RegisterRoute(router fiber.Router) {
@@ -54,7 +60,7 @@ func (h *Handler) HandleWS(c fiber.Ctx) error {
 	userID := claims.UserID
 
 	err = upgrader.Upgrade(c.RequestCtx(), func(conn *websocket.Conn) {
-		client := NewClient(userID, conn, h.hub, h.presence, h.partnerStore)
+		client := NewClient(userID, conn, h.hub, h.presence, h.partnerStore, h.lastSeenUpdate)
 		client.Run(context.Background())
 	})
 	if err != nil {

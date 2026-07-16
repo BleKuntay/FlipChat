@@ -26,27 +26,33 @@ type PartnerStore interface {
 	GetConversationsPartner(ctx context.Context, userID string) ([]string, error)
 }
 
+type LastSeenUpdater interface {
+	UpdateLastSeen(ctx context.Context, userID string, t time.Time) error
+}
+
 // Client represents a single active WebSocket connection.
 // Each client owns two goroutines: readPump and writePump.
 type Client struct {
-	userID       string
-	conn         *websocket.Conn
-	hub          *Hub
-	presence     PresenceSetter
-	partnerStore PartnerStore
-	sendCh       chan []byte
-	done         chan struct{}
+	userID         string
+	conn           *websocket.Conn
+	hub            *Hub
+	presence       PresenceSetter
+	partnerStore   PartnerStore
+	lastSeenUpdate LastSeenUpdater
+	sendCh         chan []byte
+	done           chan struct{}
 }
 
-func NewClient(userID string, conn *websocket.Conn, hub *Hub, presence PresenceSetter, partnerStore PartnerStore) *Client {
+func NewClient(userID string, conn *websocket.Conn, hub *Hub, presence PresenceSetter, partnerStore PartnerStore, lastSeenUpdater LastSeenUpdater) *Client {
 	return &Client{
-		userID:       userID,
-		conn:         conn,
-		hub:          hub,
-		presence:     presence,
-		partnerStore: partnerStore,
-		sendCh:       make(chan []byte, 256),
-		done:         make(chan struct{}),
+		userID:         userID,
+		conn:           conn,
+		hub:            hub,
+		presence:       presence,
+		partnerStore:   partnerStore,
+		lastSeenUpdate: lastSeenUpdater,
+		sendCh:         make(chan []byte, 256),
+		done:           make(chan struct{}),
 	}
 }
 
@@ -67,6 +73,10 @@ func (c *Client) Run(ctx context.Context) {
 
 	if err := c.presence.SetOffline(ctx, c.userID); err != nil {
 		logger.Error("ws: failed to set offline", zap.String("user_id", c.userID), zap.Error(err))
+	}
+
+	if err := c.lastSeenUpdate.UpdateLastSeen(ctx, c.userID, time.Now()); err != nil {
+		logger.Error("ws: failed to update lastSeen", zap.String("user_id", c.userID), zap.Error(err))
 	}
 }
 
