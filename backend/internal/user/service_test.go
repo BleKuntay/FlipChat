@@ -109,8 +109,15 @@ func (m *mockBlockChecker) IsBlockedEitherWay(ctx context.Context, a, b string) 
 	return args.Bool(0), args.Error(1)
 }
 
-func newTestService(repo RepositoryInterface, bc BlockChecker) *Service {
-	return NewService(repo, bc)
+type mockPresenceChecker struct{ mock.Mock }
+
+func (mpc *mockPresenceChecker) IsOnline(ctx context.Context, userID string) (bool, error) {
+	args := mpc.Called(ctx, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func newTestService(repo RepositoryInterface, bc BlockChecker, pc PresenceChecker) *Service {
+	return NewService(repo, bc, pc)
 }
 
 // ── Me ────────────────────────────────────────────────────────────────────────
@@ -121,10 +128,11 @@ func TestService_Me(t *testing.T) {
 	t.Run("returns MeResponse for existing user", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.Me(ctx, u.ID)
 
 		require.NoError(t, err)
@@ -137,9 +145,11 @@ func TestService_Me(t *testing.T) {
 	t.Run("propagates error if user not found", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("FindByID", mock.Anything, "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.Me(ctx, "ghost")
 
 		assert.Nil(t, res)
@@ -150,10 +160,12 @@ func TestService_Me(t *testing.T) {
 	t.Run("propagates database error", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		dbErr := errors.New("connection refused")
 		repo.On("FindByID", mock.Anything, "any").Return((*User)(nil), dbErr)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.Me(ctx, "any")
 
 		assert.ErrorIs(t, err, dbErr)
@@ -168,13 +180,15 @@ func TestService_UpdateProfile(t *testing.T) {
 	t.Run("update name only succeeds", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
 		updated := &UpdateProfileResponse{Response: Response{ID: u.ID, Name: "Jane Doe"}}
 		repo.On("UpdateProfile", mock.Anything, mock.AnythingOfType("*user.User")).Return(updated, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{Name: "Jane Doe"})
 
 		require.NoError(t, err)
@@ -185,13 +199,15 @@ func TestService_UpdateProfile(t *testing.T) {
 	t.Run("update username only succeeds", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
 		updated := &UpdateProfileResponse{Response: Response{ID: u.ID, Username: "janedoe"}}
 		repo.On("UpdateProfile", mock.Anything, mock.AnythingOfType("*user.User")).Return(updated, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{Username: "janedoe"})
 
 		require.NoError(t, err)
@@ -201,10 +217,12 @@ func TestService_UpdateProfile(t *testing.T) {
 	t.Run("all fields empty returns ErrUserNotUpdated", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{})
 
 		assert.Nil(t, res)
@@ -215,13 +233,15 @@ func TestService_UpdateProfile(t *testing.T) {
 	t.Run("empty bio is ignored (cannot clear bio)", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
 		updated := &UpdateProfileResponse{Response: Response{ID: u.ID, Name: "New Name"}}
 		repo.On("UpdateProfile", mock.Anything, mock.AnythingOfType("*user.User")).Return(updated, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{Name: "New Name", Bio: ""})
 		require.NoError(t, err)
 
@@ -233,9 +253,11 @@ func TestService_UpdateProfile(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("FindByID", mock.Anything, "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.UpdateProfile(ctx, "ghost", &UpdateProfileRequest{Name: "X"})
 
 		assert.Nil(t, res)
@@ -246,12 +268,14 @@ func TestService_UpdateProfile(t *testing.T) {
 	t.Run("repository.UpdateProfile fails → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		dbErr := errors.New("duplicate key value: username")
 		repo.On("UpdateProfile", mock.Anything, mock.AnythingOfType("*user.User")).Return((*UpdateProfileResponse)(nil), dbErr)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{Username: "taken"})
 
 		assert.ErrorIs(t, err, dbErr)
@@ -266,6 +290,8 @@ func TestService_UpdateEmail(t *testing.T) {
 	t.Run("succeeds with correct password", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
@@ -273,7 +299,7 @@ func TestService_UpdateEmail(t *testing.T) {
 		expected := &MeResponse{Email: "newemail@example.com"}
 		repo.On("UpdateEmail", mock.Anything, u.ID, req).Return(expected, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.UpdateEmail(ctx, u.ID, req)
 
 		require.NoError(t, err)
@@ -284,10 +310,12 @@ func TestService_UpdateEmail(t *testing.T) {
 	t.Run("wrong password returns ErrInvalidPassword", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.UpdateEmail(ctx, u.ID, &UpdateEmailRequest{
 			NewEmail:        "x@example.com",
 			CurrentPassword: "wrong",
@@ -300,9 +328,11 @@ func TestService_UpdateEmail(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("FindByID", mock.Anything, "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.UpdateEmail(ctx, "ghost", &UpdateEmailRequest{
 			NewEmail:        "x@example.com",
 			CurrentPassword: "secret123",
@@ -319,12 +349,14 @@ func TestService_ChangePassword(t *testing.T) {
 
 	t.Run("succeeds with all fields valid", func(t *testing.T) {
 		repo := new(mockRepo)
+		pc := new(mockPresenceChecker)
 		bc := new(mockBlockChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		repo.On("UpdatePassword", mock.Anything, u.ID, mock.AnythingOfType("string")).Return(nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.ChangePassword(ctx, u.ID, &ChangePasswordRequest{
 			CurrentPassword: "secret123",
 			NewPassword:     "newSecret456",
@@ -338,10 +370,12 @@ func TestService_ChangePassword(t *testing.T) {
 	t.Run("wrong current password returns ErrInvalidPassword", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.ChangePassword(ctx, u.ID, &ChangePasswordRequest{
 			CurrentPassword: "wrong",
 			NewPassword:     "newSecret456",
@@ -355,8 +389,9 @@ func TestService_ChangePassword(t *testing.T) {
 	t.Run("new password and confirm do not match → ErrPasswordMismatch", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.ChangePassword(ctx, "user-123", &ChangePasswordRequest{
 			CurrentPassword: "secret123",
 			NewPassword:     "newSecret456",
@@ -372,11 +407,13 @@ func TestService_ChangePassword(t *testing.T) {
 	t.Run("new password same as current — allowed (no validation for this)", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		repo.On("UpdatePassword", mock.Anything, u.ID, mock.AnythingOfType("string")).Return(nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.ChangePassword(ctx, u.ID, &ChangePasswordRequest{
 			CurrentPassword: "secret123",
 			NewPassword:     "secret123",
@@ -389,9 +426,11 @@ func TestService_ChangePassword(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("FindByID", mock.Anything, "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.ChangePassword(ctx, "ghost", &ChangePasswordRequest{
 			CurrentPassword: "any",
 			NewPassword:     "any",
@@ -405,12 +444,14 @@ func TestService_ChangePassword(t *testing.T) {
 	t.Run("repository.UpdatePassword fails → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		dbErr := errors.New("db write error")
 		repo.On("UpdatePassword", mock.Anything, u.ID, mock.AnythingOfType("string")).Return(dbErr)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.ChangePassword(ctx, u.ID, &ChangePasswordRequest{
 			CurrentPassword: "secret123",
 			NewPassword:     "newPass",
@@ -429,33 +470,39 @@ func TestService_DeleteAccount(t *testing.T) {
 	t.Run("succeeds", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("DeleteByID", mock.Anything, "user-123").Return(nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.DeleteAccount(ctx, "user-123")
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
 	})
 
-	t.Run("user not found — repository does not return error (silent no-op)", func(t *testing.T) {
+	t.Run("user not found — repository returns ErrNotFound", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
-		repo.On("DeleteByID", mock.Anything, "ghost").Return(nil)
+		pc := new(mockPresenceChecker)
 
-		svc := newTestService(repo, bc)
+		repo.On("DeleteByID", mock.Anything, "ghost").Return(apperr.ErrNotFound)
+
+		svc := newTestService(repo, bc, pc)
 		err := svc.DeleteAccount(ctx, "ghost")
 
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 
 	t.Run("database error → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		dbErr := errors.New("connection lost")
 		repo.On("DeleteByID", mock.Anything, "user-123").Return(dbErr)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		err := svc.DeleteAccount(ctx, "user-123")
 
 		assert.ErrorIs(t, err, dbErr)
@@ -467,61 +514,93 @@ func TestService_DeleteAccount(t *testing.T) {
 func TestService_FindUserByID(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("succeeds when no block exists", func(t *testing.T) {
+	t.Run("succeeds when no block exists — returns Response with is_online populated", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		bc.On("IsBlockedEitherWay", mock.Anything, "caller", u.ID).Return(false, nil)
+		pc.On("IsOnline", mock.Anything, u.ID).Return(true, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.FindUserByID(ctx, "caller", &GetUserURI{ID: u.ID})
 
 		require.NoError(t, err)
 		assert.Equal(t, u.ID, res.ID)
+		assert.True(t, res.IsOnline)
 		repo.AssertExpectations(t)
 		bc.AssertExpectations(t)
+		pc.AssertExpectations(t)
+	})
+
+	t.Run("presence checker error → is_online defaults to false, no error propagated", func(t *testing.T) {
+		repo := new(mockRepo)
+		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
+		u := stubUser()
+		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
+		bc.On("IsBlockedEitherWay", mock.Anything, "caller", u.ID).Return(false, nil)
+		pc.On("IsOnline", mock.Anything, u.ID).Return(false, errors.New("redis down"))
+
+		svc := newTestService(repo, bc, pc)
+		res, err := svc.FindUserByID(ctx, "caller", &GetUserURI{ID: u.ID})
+
+		require.NoError(t, err)
+		assert.Equal(t, u.ID, res.ID)
+		assert.False(t, res.IsOnline, "is_online defaults to false when presence check fails")
 	})
 
 	t.Run("returns ErrNotFound if target has blocked requester", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		bc.On("IsBlockedEitherWay", mock.Anything, "caller", u.ID).Return(true, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.FindUserByID(ctx, "caller", &GetUserURI{ID: u.ID})
 
 		assert.Nil(t, res)
 		assert.ErrorIs(t, err, apperr.ErrNotFound)
+		pc.AssertNotCalled(t, "IsOnline")
 	})
 
 	t.Run("user not found", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("FindByID", mock.Anything, "ghost").Return((*User)(nil), apperr.ErrNotFound)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.FindUserByID(ctx, "caller", &GetUserURI{ID: "ghost"})
 
 		assert.Nil(t, res)
 		assert.ErrorIs(t, err, apperr.ErrNotFound)
 		bc.AssertNotCalled(t, "IsBlockedEitherWay")
+		pc.AssertNotCalled(t, "IsOnline")
 	})
 
 	t.Run("block checker error → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		dbErr := errors.New("db error")
 		bc.On("IsBlockedEitherWay", mock.Anything, "caller", u.ID).Return(false, dbErr)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.FindUserByID(ctx, "caller", &GetUserURI{ID: u.ID})
 
 		assert.ErrorIs(t, err, dbErr)
+		pc.AssertNotCalled(t, "IsOnline")
 	})
 }
 
@@ -537,45 +616,56 @@ func TestService_Search(t *testing.T) {
 	t.Run("results less than limit → next_cursor is nil", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
-		// repo fetches limit+1=11; returning 2 means no more pages
+		pc := new(mockPresenceChecker)
+
 		summaries := []*Summary{makeSummary("a", "alice"), makeSummary("b", "bob")}
 		repo.On("Search", mock.Anything, "me", "ali", "", 11).Return(summaries, nil)
+		pc.On("IsOnline", mock.Anything, "a").Return(false, nil)
+		pc.On("IsOnline", mock.Anything, "b").Return(true, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "ali", Limit: 10})
 
 		require.NoError(t, err)
 		assert.Len(t, res.Data, 2)
 		assert.Nil(t, res.NextCursor)
+		pc.AssertExpectations(t)
 	})
 
 	t.Run("results exceed limit → trim and set next_cursor", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
-		// repo fetches limit+1=3; returning 3 means there is a next page
+		pc := new(mockPresenceChecker)
+
 		summaries := []*Summary{
 			makeSummary("a", "alice"),
 			makeSummary("b", "bob"),
 			makeSummary("c", "charlie"), // extra record signalling has_more
 		}
 		repo.On("Search", mock.Anything, "me", "b", "", 3).Return(summaries, nil)
+		pc.On("IsOnline", mock.Anything, "a").Return(false, nil)
+		pc.On("IsOnline", mock.Anything, "b").Return(false, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "b", Limit: 2})
 
 		require.NoError(t, err)
 		assert.Len(t, res.Data, 2, "trimmed to limit")
 		require.NotNil(t, res.NextCursor)
 		assert.Equal(t, "b", *res.NextCursor, "cursor is last item after trim")
+		pc.AssertExpectations(t)
 	})
 
 	t.Run("with cursor → forwarded to repository", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		summaries := []*Summary{makeSummary("c", "charlie")}
 		repo.On("Search", mock.Anything, "me", "c", "b", 11).Return(summaries, nil)
+		pc.On("IsOnline", mock.Anything, "c").Return(false, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "c", Cursor: "b", Limit: 10})
 
 		require.NoError(t, err)
@@ -586,22 +676,27 @@ func TestService_Search(t *testing.T) {
 	t.Run("empty results → data array is empty, next_cursor is nil", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("Search", mock.Anything, "me", "zzz", "", 11).Return([]*Summary{}, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "zzz", Limit: 10})
 
 		require.NoError(t, err)
 		assert.Empty(t, res.Data)
 		assert.Nil(t, res.NextCursor)
+		pc.AssertNotCalled(t, "IsOnline")
 	})
 
 	t.Run("limit=0 defaults to 20", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("Search", mock.Anything, "me", "x", "", 21).Return([]*Summary{}, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.Search(ctx, "me", &SearchQuery{Q: "x", Limit: 0})
 
 		require.NoError(t, err)
@@ -611,9 +706,11 @@ func TestService_Search(t *testing.T) {
 	t.Run("limit above max is capped to 50", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		repo.On("Search", mock.Anything, "me", "x", "", 51).Return([]*Summary{}, nil)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.Search(ctx, "me", &SearchQuery{Q: "x", Limit: 999})
 
 		require.NoError(t, err)
@@ -623,12 +720,31 @@ func TestService_Search(t *testing.T) {
 	t.Run("repository error → propagate error", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
 		dbErr := errors.New("query timeout")
 		repo.On("Search", mock.Anything, "me", "x", "", 11).Return(([]*Summary)(nil), dbErr)
 
-		svc := newTestService(repo, bc)
+		svc := newTestService(repo, bc, pc)
 		_, err := svc.Search(ctx, "me", &SearchQuery{Q: "x", Limit: 10})
 
 		assert.ErrorIs(t, err, dbErr)
+	})
+
+	t.Run("presence check error per user is silently ignored", func(t *testing.T) {
+		repo := new(mockRepo)
+		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+
+		summaries := []*Summary{makeSummary("a", "alice")}
+		repo.On("Search", mock.Anything, "me", "a", "", 11).Return(summaries, nil)
+		pc.On("IsOnline", mock.Anything, "a").Return(false, errors.New("redis timeout"))
+
+		svc := newTestService(repo, bc, pc)
+		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "a", Limit: 10})
+
+		require.NoError(t, err)
+		assert.Len(t, res.Data, 1)
+		assert.False(t, res.Data[0].IsOnline)
 	})
 }

@@ -54,10 +54,10 @@ func (m *mockService) DeleteAccount(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }
 
-func (m *mockService) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*User, error) {
+func (m *mockService) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*Response, error) {
 	args := m.Called(ctx, requesterID, param)
-	if u, ok := args.Get(0).(*User); ok {
-		return u, args.Error(1)
+	if r, ok := args.Get(0).(*Response); ok {
+		return r, args.Error(1)
 	}
 	return nil, args.Error(1)
 }
@@ -430,20 +430,27 @@ func TestHandler_FindByID(t *testing.T) {
 	t.Run("200 user found", func(t *testing.T) {
 		svc := new(mockService)
 		u := stubUser()
-		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: u.ID}).Return(u, nil)
+		// Handler memanggil service.FindUserByID yang return *Response, bukan *User.
+		// Kita buat Response yang sesuai dengan data stubUser.
+		expected := &Response{
+			ID:       u.ID,
+			Name:     u.Name,
+			Username: u.Username,
+		}
+		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: u.ID}).Return(expected, nil)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/"+u.ID, nil)
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		var body User
+		var body Response
 		decodeJSON(t, resp, &body)
 		assert.Equal(t, u.ID, body.ID)
 	})
 
 	t.Run("404 user not found", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: "ghost"}).Return((*User)(nil), apperr.ErrNotFound)
+		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: "ghost"}).Return((*Response)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/ghost", nil)
@@ -456,7 +463,7 @@ func TestHandler_FindByID(t *testing.T) {
 
 	t.Run("404 if target has blocked requester", func(t *testing.T) {
 		svc := new(mockService)
-		svc.On("FindUserByID", mock.Anything, "caller-id", mock.Anything).Return((*User)(nil), apperr.ErrNotFound)
+		svc.On("FindUserByID", mock.Anything, "caller-id", mock.Anything).Return((*Response)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "caller-id")
 		resp := doRequest(app, http.MethodGet, "/v1/users/blocker-id", nil)
@@ -467,7 +474,7 @@ func TestHandler_FindByID(t *testing.T) {
 	t.Run("500 internal error returns generic message", func(t *testing.T) {
 		svc := new(mockService)
 		svc.On("FindUserByID", mock.Anything, mock.Anything, mock.Anything).Return(
-			(*User)(nil),
+			(*Response)(nil),
 			errors.New("pq: could not connect to server"),
 		)
 
@@ -482,12 +489,15 @@ func TestHandler_FindByID(t *testing.T) {
 
 	t.Run("password field does not appear in response", func(t *testing.T) {
 		svc := new(mockService)
-		u := stubUser()
-		u.Password = "hashed-super-secret"
-		svc.On("FindUserByID", mock.Anything, mock.Anything, mock.Anything).Return(u, nil)
+		expected := &Response{
+			ID:       "user-123",
+			Name:     "John Doe",
+			Username: "johndoe",
+		}
+		svc.On("FindUserByID", mock.Anything, mock.Anything, mock.Anything).Return(expected, nil)
 
 		app := newTestApp(svc, "caller-id")
-		resp := doRequest(app, http.MethodGet, "/v1/users/"+u.ID, nil)
+		resp := doRequest(app, http.MethodGet, "/v1/users/user-123", nil)
 
 		var rawBody map[string]any
 		decodeJSON(t, resp, &rawBody)
