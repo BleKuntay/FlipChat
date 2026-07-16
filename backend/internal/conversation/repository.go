@@ -146,3 +146,22 @@ func (r *Repository) GetParticipants(ctx context.Context, conversationID string)
 
 	return conversation.UserLowID, conversation.UserHighID, nil
 }
+
+func (r *Repository) GetConversationsPartner(ctx context.Context, userID string) ([]string, error) {
+	q := `
+		SELECT 
+		    CASE
+		        WHEN user_low_id = $1 THEN user_high_id
+		        ELSE user_high_id
+			END AS partner_id
+		FROM conversations
+		WHERE user_low_id = $1 OR user_high_id = $1
+	`
+
+	var partners []string
+	if err := r.db.SelectContext(ctx, &partners, q, userID); err != nil {
+		return nil, err
+	}
+
+	return partners, nil
+}

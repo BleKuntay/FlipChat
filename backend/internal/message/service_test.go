@@ -56,10 +56,18 @@ func (m *mockBlockChecker) IsBlockedEitherWay(ctx context.Context, a, b string) 
 	return args.Bool(0), args.Error(1)
 }
 
+type mockPublisher struct{ mock.Mock }
+
+func (m *mockPublisher) FanOutToConversation(ctx context.Context, senderID, recipientID string, eventType string, payload any) {
+	m.Called(ctx, senderID, recipientID, eventType, payload)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func newTestService(repo *mockRepo, convs *mockConvStore, blks *mockBlockChecker, opts ...message.Option) *message.Service {
-	return message.NewService(repo, convs, blks, opts...)
+	publisher := new(mockPublisher)
+	publisher.On("FanOutToConversation", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
+	return message.NewService(repo, convs, blks, publisher, opts...)
 }
 
 func strPtr(s string) *string { return &s }
@@ -149,7 +157,7 @@ func TestService_SendMessage_Blocked_ReturnsForbidden(t *testing.T) {
 	resp, err := svc.SendMessage(ctx, "user-high", "conv-1", message.SendRequest{Content: "halo!"})
 
 	assert.Nil(t, resp)
-	assert.ErrorIs(t, err, apperr.ErrForbidden)
+	assert.ErrorIs(t, err, apperr.ErrNotFound)
 	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 

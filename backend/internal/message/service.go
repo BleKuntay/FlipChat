@@ -31,6 +31,10 @@ type BlockChecker interface {
 	IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error)
 }
 
+type EventPublisher interface {
+	FanOutToConversation(ctx context.Context, senderID, recipientID string, eventType string, payload any)
+}
+
 type Option func(*Service)
 
 func WithIDGen(fn func() string) Option {
@@ -45,14 +49,16 @@ type Service struct {
 	repository        RepositoryInterface
 	conversationStore ConversationStore
 	blockChecker      BlockChecker
+	publisher         EventPublisher
 	idGen             func() string
 	clock             func() time.Time
 }
 
-func NewService(repository RepositoryInterface, store ConversationStore, checker BlockChecker, opts ...Option) *Service {
+func NewService(repository RepositoryInterface, store ConversationStore, checker BlockChecker, publisher EventPublisher, opts ...Option) *Service {
 	svc := &Service{
 		repository:        repository,
 		conversationStore: store,
+		publisher:         publisher,
 		blockChecker:      checker,
 		idGen:             func() string { v, _ := uuid.NewV7(); return v.String() },
 		clock:             time.Now,
@@ -64,6 +70,8 @@ func NewService(repository RepositoryInterface, store ConversationStore, checker
 
 	return svc
 }
+
+// ── public methods ────────────────────────────────────────────────────────────
 
 func (s *Service) ListMessages(ctx context.Context, userID, conversationID string, query ListQuery) (*ListResponse, error) {
 	if err := s.mustBeParticipant(ctx, userID, conversationID); err != nil {
@@ -111,7 +119,7 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 		return nil, err
 	}
 	if blocked {
-		return nil, apperr.ErrForbidden
+		return nil, apperr.ErrNotFound
 	}
 
 	if strings.TrimSpace(request.Content) == "" {
@@ -142,11 +150,15 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 		return nil, err
 	}
 
-	return toResponse(msg), nil
+	response := toResponse(msg)
+	s.publisher.FanOutToConversation(ctx, userID, other, "message.new", response)
+
+	return response, nil
 }
 
 func (s *Service) EditMessage(ctx context.Context, userID, conversationID, messageID string, request EditRequest) (*Response, error) {
-	if err := s.mustBeParticipant(ctx, userID, conversationID); err != nil {
+	other, err := s.otherParticipant(ctx, userID, conversationID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -173,11 +185,15 @@ func (s *Service) EditMessage(ctx context.Context, userID, conversationID, messa
 		return nil, err
 	}
 
-	return toResponse(msg), nil
+	response := toResponse(msg)
+	s.publisher.FanOutToConversation(ctx, userID, other, "message.edited", response)
+
+	return response, nil
 }
 
 func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, messageID string) (*Response, error) {
-	if err := s.mustBeParticipant(ctx, userID, conversationID); err != nil {
+	other, err := s.otherParticipant(ctx, userID, conversationID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -201,8 +217,13 @@ func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, mes
 		return nil, err
 	}
 
-	return toResponse(msg), nil
+	response := toResponse(msg)
+	s.publisher.FanOutToConversation(ctx, userID, other, "message.deleted", response)
+
+	return response, nil
 }
+
+// ── private helpers ───────────────────────────────────────────────────────────
 
 // mustBeParticipant verifies userID is a participant of conversationID.
 // Returns ErrNotFound if the conversation does not exist or user is not a participant.
@@ -214,7 +235,6 @@ func (s *Service) mustBeParticipant(ctx context.Context, userID, conversationID 
 	if userID != low && userID != high {
 		return apperr.ErrNotFound
 	}
-
 	return nil
 }
 
@@ -231,7 +251,6 @@ func (s *Service) otherParticipant(ctx context.Context, userID, conversationID s
 	if userID == low {
 		return high, nil
 	}
-
 	return low, nil
 }
 
@@ -245,7 +264,6 @@ func (s *Service) fetchMessageInConversation(ctx context.Context, messageID, con
 	if msg.ConversationID != conversationID {
 		return nil, apperr.ErrNotFound
 	}
-
 	return msg, nil
 }
 
@@ -257,10 +275,11 @@ func clampLimit(limit int) int {
 	if limit > MaxLimit {
 		return MaxLimit
 	}
-
 	return limit
 }
 
+// toResponse converts a Message to a Response.
+// Content is always nil for deleted messages regardless of DB state.
 func toResponse(m *Message) *Response {
 	content := m.Content
 	if m.DeletedAt != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/BleKuntay/FlipChat/backend/internal/message"
 	"github.com/BleKuntay/FlipChat/backend/internal/presence"
 	"github.com/BleKuntay/FlipChat/backend/internal/user"
+	"github.com/BleKuntay/FlipChat/backend/internal/ws"
 	"github.com/BleKuntay/FlipChat/backend/pkg/jwt"
 	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
 	"github.com/gofiber/fiber/v3"
@@ -56,6 +57,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	// ── repositories ─────────────────────────────────────────────────────────
 	authRepo := auth.NewRepository(db)
 	blockRepo := block.NewRepository(db)
+	hub := ws.NewHub(blockRepo)
 	userRepo := user.NewRepository(db)
 	friendRepo := friend.NewRepository(db)
 	conversationRepo := conversation.NewRepository(db)
@@ -67,7 +69,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	userSvc := user.NewService(userRepo, blockSvc, presenceStore)
 	friendSvc := friend.NewService(friendRepo, blockSvc)
 	conversationSvc := conversation.NewService(conversationRepo, blockSvc)
-	messageSvc := message.NewService(messageRepo, conversationRepo, blockSvc)
+	messageSvc := message.NewService(messageRepo, conversationRepo, blockSvc, hub)
 
 	// ── handlers ──────────────────────────────────────────────────────────────
 	authHandler := auth.NewHandler(authSvc)
@@ -76,11 +78,13 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	friendHandler := friend.NewHandler(friendSvc)
 	conversationHandler := conversation.NewHandler(conversationSvc)
 	messageHandler := message.NewHandler(messageSvc)
+	wsHandler := ws.NewHandler(hub, presenceStore, conversationRepo)
 
 	// ── routes ────────────────────────────────────────────────────────────────
 	v1 := app.Group("/v1")
 
 	authHandler.RegisterRoutes(v1.Group("/auth"))
+	wsHandler.RegisterRoute(v1)
 
 	protected := v1.Use(jwt.Protected())
 
