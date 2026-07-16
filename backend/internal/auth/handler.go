@@ -140,7 +140,7 @@ func clearCookie(c fiber.Ctx) {
 		Name:     "refresh_token",
 		Value:    "",
 		HTTPOnly: true,
-		Path:     "/api/v1/auth/refresh",
+		Path:     "/v1/auth/refresh",
 		Expires:  time.Unix(0, 0),
 	})
 }
@@ -155,6 +155,6 @@ func setCookie(c fiber.Ctx, refresh string) {
 		Secure:   isProd,
 		HTTPOnly: true,
 		SameSite: "Strict",
-		Path:     "/api/v1/auth/refresh",
+		Path:     "/v1/auth/refresh",
 	})
 }
