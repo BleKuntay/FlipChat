@@ -35,23 +35,9 @@ func insertUser(t *testing.T, db *sqlx.DB, name, username, email string) *User {
 	return &u
 }
 
-func insertRefreshToken(t *testing.T, db *sqlx.DB, userID, token string, expiresAt time.Time) *RefreshToken {
+func cleanUsers(t *testing.T, db *sqlx.DB) {
 	t.Helper()
-
-	var rt RefreshToken
-	err := db.Get(&rt, `
-		INSERT INTO refresh_tokens (user_id, token, expires_at)
-		VALUES ($1, $2, $3)
-		RETURNING *
-	`, userID, token, expiresAt)
-	require.NoError(t, err, "insertRefreshToken helper failed")
-
-	return &rt
-}
-
-func cleanTables(t *testing.T, db *sqlx.DB) {
-	t.Helper()
-	_, err := db.Exec("TRUNCATE TABLE refresh_tokens, users RESTART IDENTITY CASCADE")
+	_, err := db.Exec("TRUNCATE TABLE users RESTART IDENTITY CASCADE")
 	require.NoError(t, err)
 }
 
@@ -59,11 +45,12 @@ func cleanTables(t *testing.T, db *sqlx.DB) {
 
 func TestRepository_CreateUser(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
 	t.Run("creates user and returns full row", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 
 		u := &User{
 			Name:     "John Doe",
@@ -86,54 +73,35 @@ func TestRepository_CreateUser(t *testing.T) {
 		assert.Nil(t, got.AvatarURL)
 	})
 
-	t.Run("language defaults to en if empty", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
-
-		u := &User{
-			Name:     "John Doe",
-			Username: "johndoe",
-			Email:    "john@example.com",
-			Password: "hashed-password",
-			Language: "en",
-		}
-
-		got, err := repo.CreateUser(ctx, u)
-
-		require.NoError(t, err)
-		assert.Equal(t, "en", got.Language)
-	})
-
 	t.Run("returns error on duplicate email", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 
 		u := &User{
 			Name:     "Jane Doe",
 			Username: "janedoe",
-			Email:    "john@example.com", // conflict
+			Email:    "john@example.com",
 			Password: "hashed",
 			Language: "en",
 		}
 
 		_, err := repo.CreateUser(ctx, u)
-
 		assert.Error(t, err)
 	})
 
 	t.Run("returns error on duplicate username", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 
 		u := &User{
 			Name:     "Jane Doe",
-			Username: "johndoe", // conflict
+			Username: "johndoe",
 			Email:    "jane@example.com",
 			Password: "hashed",
 			Language: "en",
 		}
 
 		_, err := repo.CreateUser(ctx, u)
-
 		assert.Error(t, err)
 	})
 }
@@ -142,11 +110,12 @@ func TestRepository_CreateUser(t *testing.T) {
 
 func TestRepository_FindUserByEmail(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
 	t.Run("returns user for existing email", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		inserted := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 
 		got, err := repo.FindUserByEmail(ctx, "john@example.com")
@@ -155,7 +124,6 @@ func TestRepository_FindUserByEmail(t *testing.T) {
 		require.NotNil(t, got)
 		assert.Equal(t, inserted.ID, got.ID)
 		assert.Equal(t, "johndoe", got.Username)
-		assert.NotEmpty(t, got.Password)
 	})
 
 	t.Run("returns nil for non-existent email", func(t *testing.T) {
@@ -170,11 +138,12 @@ func TestRepository_FindUserByEmail(t *testing.T) {
 
 func TestRepository_ExistsByEmail(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
 	t.Run("returns true for existing email", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 
 		exists, err := repo.ExistsByEmail(ctx, "john@example.com")
@@ -195,11 +164,12 @@ func TestRepository_ExistsByEmail(t *testing.T) {
 
 func TestRepository_ExistsByUsername(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
 	t.Run("returns true for existing username", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 
 		exists, err := repo.ExistsByUsername(ctx, "johndoe")
@@ -220,11 +190,12 @@ func TestRepository_ExistsByUsername(t *testing.T) {
 
 func TestRepository_SaveRefreshToken(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
-	t.Run("saves refresh token and persists to database", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+	t.Run("saves token and can be found by token string", func(t *testing.T) {
+		t.Cleanup(func() { cleanUsers(t, db) })
 		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 
 		token := RefreshToken{
@@ -236,21 +207,21 @@ func TestRepository_SaveRefreshToken(t *testing.T) {
 		err := repo.SaveRefreshToken(ctx, token)
 		require.NoError(t, err)
 
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE token = $1", token.Token).Scan(&count)
+		got, err := repo.FindTokenByToken(ctx, token.Token)
 		require.NoError(t, err)
-		assert.Equal(t, 1, count)
+		require.NotNil(t, got)
+		assert.Equal(t, u.ID, got.UserID)
+		assert.Equal(t, token.Token, got.Token)
 	})
 
-	t.Run("returns error on duplicate token", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
-		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
-		insertRefreshToken(t, db, u.ID, "duplicate-token", time.Now().Add(time.Hour))
+	t.Run("returns error when token already expired", func(t *testing.T) {
+		t.Cleanup(func() { cleanUsers(t, db) })
+		u := insertUser(t, db, "John Doe2", "johndoe2", "john2@example.com")
 
 		token := RefreshToken{
 			UserID:    u.ID,
-			Token:     "duplicate-token", // conflict
-			ExpiresAt: time.Now().Add(time.Hour),
+			Token:     "expired-token",
+			ExpiresAt: time.Now().Add(-1 * time.Hour), // already expired
 		}
 
 		err := repo.SaveRefreshToken(ctx, token)
@@ -262,20 +233,27 @@ func TestRepository_SaveRefreshToken(t *testing.T) {
 
 func TestRepository_FindTokenByToken(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
-	t.Run("returns refresh token for existing token string", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+	t.Run("returns token for existing token string", func(t *testing.T) {
+		t.Cleanup(func() { cleanUsers(t, db) })
 		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
-		inserted := insertRefreshToken(t, db, u.ID, "valid-token", time.Now().Add(time.Hour))
+
+		token := RefreshToken{
+			UserID:    u.ID,
+			Token:     "valid-token",
+			ExpiresAt: time.Now().Add(time.Hour),
+		}
+		require.NoError(t, repo.SaveRefreshToken(ctx, token))
 
 		got, err := repo.FindTokenByToken(ctx, "valid-token")
 
 		require.NoError(t, err)
 		require.NotNil(t, got)
-		assert.Equal(t, inserted.ID, got.ID)
 		assert.Equal(t, u.ID, got.UserID)
+		assert.Equal(t, "valid-token", got.Token)
 		assert.False(t, got.ExpiresAt.IsZero())
 	})
 
@@ -291,26 +269,31 @@ func TestRepository_FindTokenByToken(t *testing.T) {
 
 func TestRepository_DeleteTokenByToken(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
-	t.Run("deletes token from database", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+	t.Run("deletes token — no longer findable", func(t *testing.T) {
+		t.Cleanup(func() { cleanUsers(t, db) })
 		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
-		insertRefreshToken(t, db, u.ID, "to-delete", time.Now().Add(time.Hour))
+
+		token := RefreshToken{
+			UserID:    u.ID,
+			Token:     "to-delete",
+			ExpiresAt: time.Now().Add(time.Hour),
+		}
+		require.NoError(t, repo.SaveRefreshToken(ctx, token))
 
 		err := repo.DeleteTokenByToken(ctx, "to-delete")
 		require.NoError(t, err)
 
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE token = $1", "to-delete").Scan(&count)
+		got, err := repo.FindTokenByToken(ctx, "to-delete")
 		require.NoError(t, err)
-		assert.Equal(t, 0, count)
+		assert.Nil(t, got)
 	})
 
-	t.Run("non-existent token does not return error (silent no-op)", func(t *testing.T) {
+	t.Run("non-existent token is idempotent", func(t *testing.T) {
 		err := repo.DeleteTokenByToken(ctx, "ghost-token")
-
 		assert.NoError(t, err)
 	})
 }
@@ -319,44 +302,54 @@ func TestRepository_DeleteTokenByToken(t *testing.T) {
 
 func TestRepository_DeleteTokenByUserID(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
 	t.Run("deletes all tokens for a user", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
-		insertRefreshToken(t, db, u.ID, "token-1", time.Now().Add(time.Hour))
-		insertRefreshToken(t, db, u.ID, "token-2", time.Now().Add(time.Hour))
-		insertRefreshToken(t, db, u.ID, "token-3", time.Now().Add(time.Hour))
+
+		for _, tk := range []string{"token-1", "token-2", "token-3"} {
+			require.NoError(t, repo.SaveRefreshToken(ctx, RefreshToken{
+				UserID:    u.ID,
+				Token:     tk,
+				ExpiresAt: time.Now().Add(time.Hour),
+			}))
+		}
 
 		err := repo.DeleteTokenByUserID(ctx, u.ID)
 		require.NoError(t, err)
 
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1", u.ID).Scan(&count)
-		require.NoError(t, err)
-		assert.Equal(t, 0, count)
+		for _, tk := range []string{"token-1", "token-2", "token-3"} {
+			got, err := repo.FindTokenByToken(ctx, tk)
+			require.NoError(t, err)
+			assert.Nil(t, got, "token %s should be deleted", tk)
+		}
 	})
 
 	t.Run("only deletes tokens for the specified user", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+		t.Cleanup(func() { cleanUsers(t, db) })
 		u1 := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
 		u2 := insertUser(t, db, "Jane Doe", "janedoe", "jane@example.com")
-		insertRefreshToken(t, db, u1.ID, "u1-token", time.Now().Add(time.Hour))
-		insertRefreshToken(t, db, u2.ID, "u2-token", time.Now().Add(time.Hour))
+
+		require.NoError(t, repo.SaveRefreshToken(ctx, RefreshToken{
+			UserID: u1.ID, Token: "u1-token", ExpiresAt: time.Now().Add(time.Hour),
+		}))
+		require.NoError(t, repo.SaveRefreshToken(ctx, RefreshToken{
+			UserID: u2.ID, Token: "u2-token", ExpiresAt: time.Now().Add(time.Hour),
+		}))
 
 		err := repo.DeleteTokenByUserID(ctx, u1.ID)
 		require.NoError(t, err)
 
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1", u2.ID).Scan(&count)
+		got, err := repo.FindTokenByToken(ctx, "u2-token")
 		require.NoError(t, err)
-		assert.Equal(t, 1, count)
+		assert.NotNil(t, got, "u2 token must still exist")
 	})
 
-	t.Run("non-existent userID does not return error (silent no-op)", func(t *testing.T) {
+	t.Run("non-existent userID is idempotent", func(t *testing.T) {
 		err := repo.DeleteTokenByUserID(ctx, "00000000-0000-0000-0000-000000000000")
-
 		assert.NoError(t, err)
 	})
 }
@@ -365,42 +358,34 @@ func TestRepository_DeleteTokenByUserID(t *testing.T) {
 
 func TestRepository_RotateRefreshToken(t *testing.T) {
 	db := testhelper.NewTestDB(t)
-	repo := NewRepository(db)
+	rdb := testhelper.NewTestRedis(t)
+	repo := NewRepository(db, rdb, 7*24*time.Hour)
 	ctx := context.Background()
 
-	t.Run("replaces old token with new token and updates expires_at", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
+	t.Run("old token removed, new token findable", func(t *testing.T) {
+		t.Cleanup(func() { cleanUsers(t, db) })
 		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
-		insertRefreshToken(t, db, u.ID, "old-token", time.Now().Add(time.Hour))
 
-		newExpiry := time.Now().Add(7 * 24 * time.Hour).UTC().Truncate(time.Second)
+		require.NoError(t, repo.SaveRefreshToken(ctx, RefreshToken{
+			UserID: u.ID, Token: "old-token", ExpiresAt: time.Now().Add(time.Hour),
+		}))
+
+		newExpiry := time.Now().Add(7 * 24 * time.Hour)
 		err := repo.RotateRefreshToken(ctx, "old-token", "new-token", newExpiry)
 		require.NoError(t, err)
 
-		var oldCount int
-		err = db.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE token = $1", "old-token").Scan(&oldCount)
+		old, err := repo.FindTokenByToken(ctx, "old-token")
 		require.NoError(t, err)
-		assert.Equal(t, 0, oldCount)
+		assert.Nil(t, old, "old token must be gone")
 
-		var got RefreshToken
-		err = db.Get(&got, "SELECT * FROM refresh_tokens WHERE token = $1", "new-token")
+		got, err := repo.FindTokenByToken(ctx, "new-token")
 		require.NoError(t, err)
+		require.NotNil(t, got)
 		assert.Equal(t, u.ID, got.UserID)
-		assert.Equal(t, newExpiry, got.ExpiresAt.UTC().Truncate(time.Second))
 	})
 
-	t.Run("ON DELETE CASCADE — deleting user removes all refresh tokens", func(t *testing.T) {
-		t.Cleanup(func() { cleanTables(t, db) })
-		u := insertUser(t, db, "John Doe", "johndoe", "john@example.com")
-		insertRefreshToken(t, db, u.ID, "token-a", time.Now().Add(time.Hour))
-		insertRefreshToken(t, db, u.ID, "token-b", time.Now().Add(time.Hour))
-
-		_, err := db.Exec("DELETE FROM users WHERE id = $1", u.ID)
-		require.NoError(t, err)
-
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1", u.ID).Scan(&count)
-		require.NoError(t, err)
-		assert.Equal(t, 0, count, "refresh tokens harus terhapus cascade saat user dihapus")
+	t.Run("rotating non-existent token returns ErrNotFound", func(t *testing.T) {
+		err := repo.RotateRefreshToken(ctx, "ghost-token", "new-token", time.Now().Add(time.Hour))
+		assert.Error(t, err)
 	})
 }

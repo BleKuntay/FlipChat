@@ -55,7 +55,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	presenceStore := presence.NewStore(redisClient, config.App.PresenceTTL)
 
 	// ── repositories ─────────────────────────────────────────────────────────
-	authRepo := auth.NewRepository(db)
+	authRepo := auth.NewRepository(db, redisClient, config.App.RefreshTokenExpiry)
 	blockRepo := block.NewRepository(db)
 	hub := ws.NewHub(blockRepo)
 	userRepo := user.NewRepository(db)
