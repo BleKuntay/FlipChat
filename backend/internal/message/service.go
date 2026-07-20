@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -36,6 +37,10 @@ type EventPublisher interface {
 	FanOutToConversation(ctx context.Context, senderID, recipientID string, eventType string, payload any)
 }
 
+type ObjectDeleter interface {
+	DeleteObject(ctx context.Context, objectKey string) error
+}
+
 type Option func(*Service)
 
 func WithIDGen(fn func() string) Option {
@@ -51,6 +56,7 @@ type Service struct {
 	conversationStore ConversationStore
 	blockChecker      BlockChecker
 	publisher         EventPublisher
+	objects           ObjectDeleter
 	idGen             func() string
 	clock             func() time.Time
 }
@@ -123,7 +129,10 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 		return nil, apperr.ErrNotFound
 	}
 
-	if strings.TrimSpace(request.Content) == "" {
+	hasContent := strings.TrimSpace(request.Content) != ""
+	hasAttachment := request.AttachmentID != nil
+
+	if !hasContent && !hasAttachment {
 		return nil, apperr.ErrBadRequest
 	}
 
@@ -137,13 +146,39 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 		}
 	}
 
-	content := request.Content
+	var content *string
+	if hasContent {
+		c := request.Content
+		content = &c
+	}
+
+	var rawMetadata *json.RawMessage
+	if hasAttachment {
+		meta := map[string]any{
+			"attachment_id": *request.AttachmentID,
+			"object_key":    "attachments/" + *request.AttachmentID,
+			"filename":      derefString(request.Filename),
+			"mime_type":     derefString(request.MIMEType),
+			"size":          derefInt64(request.Size),
+			"uploader_id":   userID,
+		}
+
+		b, err := json.Marshal(meta)
+		if err != nil {
+			return nil, err
+		}
+
+		raw := json.RawMessage(b)
+		rawMetadata = &raw
+	}
+
 	msg := &Message{
 		ID:             s.idGen(),
 		ConversationID: conversationID,
 		SenderID:       userID,
-		Content:        &content,
+		Content:        content,
 		ReplyToID:      request.ReplyToID,
+		Metadata:       rawMetadata,
 		CreatedAt:      s.clock(),
 	}
 
@@ -214,6 +249,12 @@ func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, mes
 	msg.DeletedBy = &userID
 	msg.DeletedAt = &now
 
+	if s.objects != nil && msg.Metadata != nil {
+		if err := s.deleteAttachmentObject(ctx, msg.Metadata); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.repository.Delete(ctx, msg); err != nil {
 		return nil, err
 	}
@@ -255,6 +296,10 @@ func (s *Service) MarkAsRead(ctx context.Context, userID, conversationID, messag
 	s.publisher.FanOutToConversation(ctx, userID, other, "message.read", response)
 
 	return response, nil
+}
+
+func WithObjectDeleter(d ObjectDeleter) Option {
+	return func(s *Service) { s.objects = d }
 }
 
 // ── private helpers ───────────────────────────────────────────────────────────
@@ -333,4 +378,32 @@ func toResponse(m *Message) *Response {
 		UpdatedAt:      m.UpdatedAt,
 		ReadAt:         m.ReadAt,
 	}
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func derefInt64(n *int64) int64 {
+	if n == nil {
+		return 0
+	}
+	return *n
+}
+
+func (s *Service) deleteAttachmentObject(ctx context.Context, raw *json.RawMessage) error {
+	var metadata map[string]any
+	if err := json.Unmarshal(*raw, &metadata); err != nil {
+		return nil
+	}
+
+	key, ok := metadata["object_key"].(string)
+	if !ok || key == "" {
+		return nil
+	}
+
+	return s.objects.DeleteObject(ctx, key)
 }

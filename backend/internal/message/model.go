@@ -31,8 +31,12 @@ type ListQuery struct {
 }
 
 type SendRequest struct {
-	Content   string  `json:"content"`
-	ReplyToID *string `json:"reply_to_id"`
+	Content      string  `json:"content"`
+	ReplyToID    *string `json:"reply_to_id"`
+	AttachmentID *string `json:"attachment_id"`
+	Filename     *string `json:"filename"`
+	MIMEType     *string `json:"mime_type"`
+	Size         *int64  `json:"size"`
 }
 
 type EditRequest struct {

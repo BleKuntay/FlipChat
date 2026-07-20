@@ -1,11 +1,13 @@
 package main
 
 import (
+	"github.com/BleKuntay/FlipChat/backend/internal/attachment"
 	"github.com/BleKuntay/FlipChat/backend/internal/auth"
 	"github.com/BleKuntay/FlipChat/backend/internal/block"
 	"github.com/BleKuntay/FlipChat/backend/internal/config"
 	"github.com/BleKuntay/FlipChat/backend/internal/conversation"
 	"github.com/BleKuntay/FlipChat/backend/internal/db/migration"
+	miniodb "github.com/BleKuntay/FlipChat/backend/internal/db/minio"
 	"github.com/BleKuntay/FlipChat/backend/internal/db/postgres"
 	rdb "github.com/BleKuntay/FlipChat/backend/internal/db/redis"
 	"github.com/BleKuntay/FlipChat/backend/internal/friend"
@@ -20,6 +22,7 @@ import (
 	fiberLogger "github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/jmoiron/sqlx"
+	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -36,9 +39,10 @@ func main() {
 	applyMigration()
 
 	redisClient := rdb.Connect()
+	minioClient := miniodb.Connect()
 
 	app := setupApp()
-	registerRoutes(app, db, redisClient)
+	registerRoutes(app, db, redisClient, minioClient)
 
 	logger.Info("server starting",
 		zap.String("env", config.App.AppEnv),
@@ -50,9 +54,10 @@ func main() {
 	}
 }
 
-func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
+func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, minioClient *minio.Client) {
 	// ── infrastructure ────────────────────────────────────────────────────────
 	presenceStore := presence.NewStore(redisClient, config.App.PresenceTTL)
+	minioStore := miniodb.NewStore(minioClient)
 
 	// ── repositories ─────────────────────────────────────────────────────────
 	authRepo := auth.NewRepository(db, redisClient, config.App.RefreshTokenExpiry)
@@ -69,14 +74,21 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	userSvc := user.NewService(userRepo, blockSvc, presenceStore)
 	friendSvc := friend.NewService(friendRepo, blockSvc)
 	conversationSvc := conversation.NewService(conversationRepo, blockSvc)
-	messageSvc := message.NewService(messageRepo, conversationRepo, blockSvc, hub)
-
+	attachmentSvc := attachment.NewService(minioStore, messageRepo, conversationRepo)
+	messageSvc := message.NewService(
+		messageRepo,
+		conversationRepo,
+		blockSvc,
+		hub,
+		message.WithObjectDeleter(minioStore),
+	)
 	// ── handlers ──────────────────────────────────────────────────────────────
 	authHandler := auth.NewHandler(authSvc)
 	blockHandler := block.NewHandler(blockSvc)
 	userHandler := user.NewHandler(userSvc)
 	friendHandler := friend.NewHandler(friendSvc)
 	conversationHandler := conversation.NewHandler(conversationSvc)
+	attachmentHandler := attachment.NewHandler(attachmentSvc)
 	messageHandler := message.NewHandler(messageSvc)
 	wsHandler := ws.NewHandler(hub, presenceStore, conversationRepo, userRepo)
 
@@ -91,6 +103,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client) {
 	userHandler.RegisterRoutes(protected.Group("/users"))
 	friendHandler.RegisterRoutes(protected.Group("/friends"))
 	blockHandler.RegisterRoutes(protected.Group("/blocks"))
+	attachmentHandler.RegisterRoutes(protected.Group("/attachments"))
 
 	conv := protected.Group("/conversations")
 	conversationHandler.RegisterRoute(conv)

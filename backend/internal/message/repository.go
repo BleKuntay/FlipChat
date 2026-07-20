@@ -3,9 +3,11 @@ package message
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/jmoiron/sqlx"
+	"time"
 )
 
 type Repository struct {
@@ -129,6 +131,37 @@ func (r *Repository) MarkAsRead(ctx context.Context, message *Message) error {
 	}
 
 	return nil
+}
+
+func (r *Repository) FindByAttachmentID(ctx context.Context, attachmentID string) (conversationID string, metadata map[string]any, deletedAt *time.Time, err error) {
+	q := `
+		SELECT conversation_id, metadata, deleted_at
+		FROM messages
+		WHERE metadata->>'attachment_id' = $1
+		LIMIT 1
+	`
+
+	var row struct {
+		ConversationID string     `db:"conversation_id"`
+		Metadata       []byte     `db:"metadata"`
+		DeletedAt      *time.Time `db:"deleted_at"`
+	}
+
+	if err := r.db.GetContext(ctx, &row, q, attachmentID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil, nil, apperr.ErrNotFound
+		}
+		return "", nil, nil, err
+	}
+
+	var meta map[string]any
+	if row.Metadata != nil {
+		if err := json.Unmarshal(row.Metadata, &meta); err != nil {
+			return "", nil, nil, err
+		}
+	}
+
+	return row.ConversationID, meta, row.DeletedAt, nil
 }
 
 func stringToNullable(s string) *string {
