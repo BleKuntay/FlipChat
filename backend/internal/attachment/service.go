@@ -1,0 +1,136 @@
+package attachment
+
+import (
+	"bytes"
+	"context"
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+	"github.com/google/uuid"
+	"io"
+	"time"
+)
+
+// ObjectStore abstracts MinIO operations.
+type ObjectStore interface {
+	PutObject(ctx context.Context, objectKey string, reader io.Reader, size int64, mimeType string) error
+	GetObject(ctx context.Context, objectKey string) (io.ReadCloser, error)
+	DeleteObject(ctx context.Context, objectKey string) error
+}
+
+// MessageStore fetches message metadata for attachment authorization.
+type MessageStore interface {
+	FindByAttachmentID(ctx context.Context, attachmentID string) (conversationID string, metadata map[string]any, deletedAt *time.Time, err error)
+}
+
+// ConversationStore checks conversation participants.
+type ConversationStore interface {
+	GetParticipants(ctx context.Context, conversationID string) (userLowID, userHighID string, err error)
+}
+
+type Service struct {
+	objects       ObjectStore
+	messages      MessageStore
+	conversations ConversationStore
+}
+
+func NewService(objects ObjectStore, messages MessageStore, conversations ConversationStore) *Service {
+	return &Service{
+		objects:       objects,
+		messages:      messages,
+		conversations: conversations,
+	}
+}
+
+func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size int64, reader io.Reader) (*UploadResponse, error) {
+	if size > MaxFileSize {
+		return nil, apperr.ErrBadRequest
+	}
+
+	header, err := ReadHeader(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	mimeType, err := DetectMIME(header)
+	if err != nil {
+		return nil, apperr.ErrBadRequest
+	}
+
+	fullReader := io.MultiReader(bytes.NewReader(header), reader)
+
+	attachmentID := uuid.New().String()
+	objectKey := "attachments/" + attachmentID
+
+	if err := s.objects.PutObject(ctx, objectKey, fullReader, size, mimeType); err != nil {
+		return nil, err
+	}
+
+	response := &UploadResponse{
+		AttachmentID: attachmentID,
+		ObjectKey:    objectKey,
+		Filename:     filename,
+		MIMEType:     mimeType,
+		Size:         size,
+		UploaderID:   uploaderID,
+	}
+
+	return response, nil
+}
+
+func (s *Service) Download(ctx context.Context, requesterID, attachmentID string) (io.ReadCloser, *Metadata, error) {
+	ref, metadata, deletedAt, err := s.messages.FindByAttachmentID(ctx, attachmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ref == "" || metadata == nil {
+		return nil, nil, apperr.ErrNotFound
+	}
+	if deletedAt != nil {
+		return nil, nil, apperr.ErrNotFound
+	}
+
+	attachmentMetadata := &Metadata{
+		AttachmentID: getString(metadata, "attachment_id"),
+		ObjectKey:    getString(metadata, "object_key"),
+		Filename:     getString(metadata, "filename"),
+		MIMEType:     getString(metadata, "mime_type"),
+		Size:         getInt64(metadata, "size"),
+		UploaderID:   getString(metadata, "uploader_id"),
+	}
+	if attachmentMetadata.ObjectKey == "" {
+		return nil, nil, apperr.ErrNotFound
+	}
+
+	low, high, err := s.conversations.GetParticipants(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	if requesterID != low && requesterID != high {
+		return nil, nil, apperr.ErrNotFound
+	}
+
+	reader, err := s.objects.GetObject(ctx, attachmentMetadata.ObjectKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return reader, attachmentMetadata, nil
+}
+
+func getString(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+
+	return ""
+}
+
+func getInt64(m map[string]any, key string) int64 {
+	switch v := m[key].(type) {
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	}
+
+	return 0
+}
