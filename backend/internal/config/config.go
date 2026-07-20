@@ -33,6 +33,12 @@ type Config struct {
 	JWTSecret          string
 	AccessTokenExpiry  time.Duration
 	RefreshTokenExpiry time.Duration
+
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioBucket    string
+	MinioUseSSL    bool
 }
 
 var App *Config
@@ -74,6 +80,11 @@ func LoadConfig() {
 		JWTSecret:           getEnv("JWT_SECRET", ""),
 		AccessTokenExpiry:   accessExpiry,
 		RefreshTokenExpiry:  refreshExpiry,
+		MinioEndpoint:       getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey:      getEnv("MINIO_ACCESS_KEY", "fc_user"),
+		MinioSecretKey:      getEnv("MINIO_SECRET_KEY", "fc_password"),
+		MinioBucket:         getEnv("MINIO_BUCKET", "flip_chat"),
+		MinioUseSSL:         false,
 	}
 }
 
