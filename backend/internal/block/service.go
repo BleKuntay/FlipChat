@@ -2,7 +2,10 @@ package block
 
 import (
 	"context"
+
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
+	"go.uber.org/zap"
 )
 
 const defaultLimit = 20
@@ -29,7 +32,17 @@ func (s *Service) BlockUser(ctx context.Context, request Request) (*Response, er
 
 	low, high := canonical(request.BlockerID, request.BlockedID)
 
-	return s.repository.BlockUserAtomic(ctx, request, low, high)
+	response, err := s.repository.BlockUserAtomic(ctx, request, low, high)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("block: user blocked",
+		zap.String("blocker_id", request.BlockerID),
+		zap.String("blocked_id", request.BlockedID),
+	)
+
+	return response, nil
 }
 
 func (s *Service) UnblockUser(ctx context.Context, request Request) error {
@@ -37,7 +50,16 @@ func (s *Service) UnblockUser(ctx context.Context, request Request) error {
 		return apperr.ErrBadRequest
 	}
 
-	return s.repository.UnblockUser(ctx, request)
+	if err := s.repository.UnblockUser(ctx, request); err != nil {
+		return err
+	}
+
+	logger.Info("block: user unblocked",
+		zap.String("blocker_id", request.BlockerID),
+		zap.String("blocked_id", request.BlockedID),
+	)
+
+	return nil
 }
 
 func (s *Service) GetBlockList(ctx context.Context, blockerID string, query ListQuery) (*ListResponse, error) {
