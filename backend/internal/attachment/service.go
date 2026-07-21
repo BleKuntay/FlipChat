@@ -3,6 +3,7 @@ package attachment
 import (
 	"bytes"
 	"context"
+	"errors"
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/google/uuid"
 	"io"
@@ -41,12 +42,16 @@ func NewService(objects ObjectStore, messages MessageStore, conversations Conver
 }
 
 func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size int64, reader io.Reader) (*UploadResponse, error) {
-	if size > MaxFileSize {
+	if size <= 0 || size > MaxFileSize {
 		return nil, apperr.ErrBadRequest
 	}
 
 	header, err := ReadHeader(reader)
 	if err != nil {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, apperr.ErrBadRequest
+		}
+
 		return nil, err
 	}
 
