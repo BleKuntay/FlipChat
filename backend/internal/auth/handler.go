@@ -7,8 +7,10 @@ import (
 	"github.com/BleKuntay/FlipChat/backend/internal/config"
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
 	"github.com/BleKuntay/FlipChat/backend/pkg/jwt"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
 	"github.com/gofiber/fiber/v3"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 type ServiceInterface interface {
@@ -53,9 +55,15 @@ func (h *Handler) Register(c fiber.Ctx) error {
 		case errors.Is(err, shared.ErrPasswordWeak):
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		default:
+			logger.Error("auth: register failed", zap.String("username", request.Username), zap.Error(err))
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 		}
 	}
+
+	logger.Info("auth: user registered",
+		zap.String("user_id", response.User.ID),
+		zap.String("username", response.User.Username),
+	)
 
 	setCookie(c, refreshToken)
 
@@ -74,11 +82,15 @@ func (h *Handler) Login(c fiber.Ctx) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):
+			logger.Warn("auth: login failed, invalid credentials", zap.String("email", request.Email))
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 		default:
+			logger.Error("auth: login failed", zap.String("email", request.Email), zap.Error(err))
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 		}
 	}
+
+	logger.Info("auth: user logged in", zap.String("user_id", response.User.ID))
 
 	setCookie(c, refreshToken)
 
@@ -89,7 +101,11 @@ func (h *Handler) Logout(c fiber.Ctx) error {
 	ctx := c.Context()
 
 	if refreshToken := c.Cookies("refresh_token"); refreshToken != "" {
-		_ = h.service.Logout(ctx, refreshToken)
+		if err := h.service.Logout(ctx, refreshToken); err != nil {
+			logger.Warn("auth: failed to revoke refresh token on logout", zap.Error(err))
+		} else {
+			logger.Info("auth: refresh token revoked on logout")
+		}
 	}
 
 	clearCookie(c)
@@ -102,8 +118,11 @@ func (h *Handler) LogoutAll(c fiber.Ctx) error {
 	userID := fiber.Locals[string](c, "user_id")
 
 	if err := h.service.LogoutAll(ctx, userID); err != nil {
+		logger.Error("auth: logout all failed", zap.String("user_id", userID), zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	logger.Info("auth: all sessions revoked", zap.String("user_id", userID))
 
 	clearCookie(c)
 
@@ -122,13 +141,18 @@ func (h *Handler) Refresh(c fiber.Ctx) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, jwt.ErrInvalidToken):
+			logger.Warn("auth: refresh failed, invalid token")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, jwt.ErrRefreshTokenExpired):
+			logger.Warn("auth: refresh failed, token expired")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 		default:
+			logger.Error("auth: refresh failed", zap.Error(err))
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 		}
 	}
+
+	logger.Debug("auth: token refreshed")
 
 	setCookie(c, newRefreshToken)
 
