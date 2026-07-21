@@ -21,6 +21,15 @@ type mockHandlerService struct {
 	listMessagesFn  func(ctx context.Context, userID, conversationID string, query ListQuery) (*ListResponse, error)
 	editMessageFn   func(ctx context.Context, userID, conversationID, messageID string, req EditRequest) (*Response, error)
 	deleteMessageFn func(ctx context.Context, userID, conversationID, messageID string) (*Response, error)
+	markAsReadFn    func(ctx context.Context, userID, conversationID, messageID string) (*Response, error)
+}
+
+func (m *mockHandlerService) MarkAsRead(ctx context.Context, userID, conversationID, messageID string) (*Response, error) {
+	if m.markAsReadFn != nil {
+		return m.markAsReadFn(ctx, userID, conversationID, messageID)
+	}
+	content := "test"
+	return &Response{ID: "msg-1", ConversationID: conversationID, SenderID: userID, Content: &content}, nil
 }
 
 func (m *mockHandlerService) SendMessage(ctx context.Context, userID, conversationID string, req SendRequest) (*Response, error) {
@@ -83,6 +92,8 @@ func doRequest(app *fiber.App, method, url string, body []byte) *http.Response {
 	resp, _ := app.Test(req)
 	return resp
 }
+
+func strPtr(s string) *string { return &s }
 
 // ── SendMessage ───────────────────────────────────────────────────────────────
 
@@ -350,4 +361,48 @@ func TestHandler_DeleteMessage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ── SendMessage with attachment ───────────────────────────────────────────
+
+func TestHandler_SendMessage_WithAttachmentID_Returns201(t *testing.T) {
+	url := "/conversations/" + handlerConvoID + "/messages"
+
+	size := int64(1024)
+	body, _ := json.Marshal(SendRequest{
+		AttachmentID: strPtr("att-abc"),
+		Filename:     strPtr("photo.jpg"),
+		MIMEType:     strPtr("image/jpeg"),
+		Size:         &size,
+	})
+
+	svc := &mockHandlerService{}
+	svc.sendMessageFn = func(_ context.Context, _, _ string, req SendRequest) (*Response, error) {
+		if req.AttachmentID == nil || *req.AttachmentID != "att-abc" {
+			return nil, apperr.ErrBadRequest
+		}
+		return &Response{ID: "msg-1", ConversationID: handlerConvoID, SenderID: handlerUserID}, nil
+	}
+
+	resp := doRequest(newTestApp(svc), http.MethodPost, url, body)
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+}
+
+func TestHandler_SendMessage_NoContentNoAttachment_Returns400(t *testing.T) {
+	url := "/conversations/" + handlerConvoID + "/messages"
+
+	body, _ := json.Marshal(SendRequest{})
+
+	svc := &mockHandlerService{}
+	svc.sendMessageFn = func(_ context.Context, _, _ string, _ SendRequest) (*Response, error) {
+		return nil, apperr.ErrBadRequest
+	}
+
+	resp := doRequest(newTestApp(svc), http.MethodPost, url, body)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	var respBody map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+	assert.Contains(t, respBody, "error")
 }
