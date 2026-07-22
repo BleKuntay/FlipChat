@@ -1,0 +1,11 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # default set already covers: errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose       # unclosed io.ReadCloser — relevant to attachment.Download / minio GetObject
+    - sqlclosecheck   # unclosed *sql.Rows / *sql.Stmt via sqlx
