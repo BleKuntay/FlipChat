@@ -2,11 +2,9 @@ package attachment
 
 import (
 	"errors"
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"io"
 )
-
-var ErrUnsupportedMIME = errors.New("unsupported file type: only JPEG, PNG, GIF, WebP allowed")
-var ErrFileTooLarge = errors.New("file too large: maximum 5MB")
 
 const MaxFileSize = 5 * 1024 * 1024
 
@@ -20,7 +18,7 @@ var allowedMIMEs = map[string]string{
 
 func DetectMIME(header []byte) (mime string, err error) {
 	if len(header) < 4 {
-		return "", ErrUnsupportedMIME
+		return "", apperr.ErrUnsupportedMIME
 	}
 
 	h := string(header)
@@ -45,7 +43,7 @@ func DetectMIME(header []byte) (mime string, err error) {
 		return "image/webp", nil
 	}
 
-	return "", ErrUnsupportedMIME
+	return "", apperr.ErrUnsupportedMIME
 }
 
 func ReadHeader(r io.Reader) ([]byte, error) {

@@ -21,6 +21,10 @@ func ErrorStatus(c fiber.Ctx, err error) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, apperr.ErrUnauthorized):
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+	case errors.Is(err, apperr.ErrUnsupportedMIME):
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
+	case errors.Is(err, apperr.ErrFileTooLarge):
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
 	default:
 		logger.Error("unhandled error",
 			zap.String("method", c.Method()),

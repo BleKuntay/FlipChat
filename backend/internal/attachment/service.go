@@ -50,7 +50,7 @@ func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size 
 			zap.Int64("size", size),
 		)
 
-		return nil, apperr.ErrBadRequest
+		return nil, apperr.ErrFileTooLarge
 	}
 
 	header, err := ReadHeader(reader)
@@ -69,7 +69,7 @@ func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size 
 			zap.String("filename", filename),
 		)
 
-		return nil, ErrUnsupportedMIME
+		return nil, apperr.ErrUnsupportedMIME
 	}
 
 	fullReader := io.MultiReader(bytes.NewReader(header), reader)
