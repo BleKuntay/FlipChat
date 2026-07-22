@@ -151,8 +151,8 @@ func (r *Repository) GetConversationsPartner(ctx context.Context, userID string)
 	q := `
 		SELECT 
 		    CASE
-		        WHEN user_low_id = $1 THEN user_high_id
-		        ELSE user_high_id
+				WHEN user_low_id = $1 THEN user_high_id
+				ELSE user_low_id
 			END AS partner_id
 		FROM conversations
 		WHERE user_low_id = $1 OR user_high_id = $1
