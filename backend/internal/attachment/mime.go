@@ -8,14 +8,6 @@ import (
 
 const MaxFileSize = 5 * 1024 * 1024
 
-var allowedMIMEs = map[string]string{
-	"\xff\xd8\xff":      "image/jpeg",
-	"\x89PNG\r\n\x1a\n": "image/png",
-	"GIF87a":            "image/gif",
-	"GIF89a":            "image/gif",
-	"RIFF????WEBP":      "image/webp",
-}
-
 func DetectMIME(header []byte) (mime string, err error) {
 	if len(header) < 4 {
 		return "", apperr.ErrUnsupportedMIME
