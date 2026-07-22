@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"io"
 	"time"
 )
@@ -43,6 +45,11 @@ func NewService(objects ObjectStore, messages MessageStore, conversations Conver
 
 func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size int64, reader io.Reader) (*UploadResponse, error) {
 	if size <= 0 || size > MaxFileSize {
+		logger.Warn("attachment: rejected, file too large",
+			zap.String("uploader_id", uploaderID),
+			zap.Int64("size", size),
+		)
+
 		return nil, apperr.ErrBadRequest
 	}
 
@@ -57,7 +64,12 @@ func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size 
 
 	mimeType, err := DetectMIME(header)
 	if err != nil {
-		return nil, apperr.ErrBadRequest
+		logger.Warn("attachment: rejected, unsupported mime type",
+			zap.String("uploader_id", uploaderID),
+			zap.String("filename", filename),
+		)
+
+		return nil, ErrUnsupportedMIME
 	}
 
 	fullReader := io.MultiReader(bytes.NewReader(header), reader)
@@ -77,6 +89,13 @@ func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size 
 		Size:         size,
 		UploaderID:   uploaderID,
 	}
+
+	logger.Info("attachment: uploaded",
+		zap.String("attachment_id", response.AttachmentID),
+		zap.String("uploader_id", response.UploaderID),
+		zap.String("mime_type", response.MIMEType),
+		zap.Int64("size", response.Size),
+	)
 
 	return response, nil
 }
@@ -110,6 +129,11 @@ func (s *Service) Download(ctx context.Context, requesterID, attachmentID string
 		return nil, nil, err
 	}
 	if requesterID != low && requesterID != high {
+		logger.Warn("attachment: unauthorized download attempt",
+			zap.String("requester_id", requesterID),
+			zap.String("attachment_id", attachmentID),
+		)
+
 		return nil, nil, apperr.ErrNotFound
 	}
 
