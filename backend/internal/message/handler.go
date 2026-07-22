@@ -25,7 +25,7 @@ func NewHandler(service ServiceInterface) *Handler {
 func (h *Handler) RegisterRoutes(router fiber.Router) {
 	router.Post("/:id/messages", h.SendMessage)
 	router.Get("/:id/messages", h.ListMessages)
-	router.Patch("/:id/messages/:msg_id/read", h.MarkAsRead)
+	router.Post("/:id/messages/:msg_id/read", h.MarkAsRead)
 	router.Patch("/:id/messages/:msg_id", h.EditMessage)
 	router.Delete("/:id/messages/:msg_id", h.DeleteMessage)
 }
