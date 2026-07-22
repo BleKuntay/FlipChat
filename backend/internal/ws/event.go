@@ -9,11 +9,7 @@ const (
 	EventMessageRead     = "message.read"
 	EventPresenceOnline  = "presence.online"
 	EventPresenceOffline = "presence.offline"
-)
-
-const (
-	EventHeartbeat  = "heartbeat"
-	EventClientRead = "message.read"
+	EventHeartbeat       = "heartbeat"
 )
 
 type Event struct {
@@ -50,10 +46,6 @@ type MessageReadPayload struct {
 
 type PresencePayload struct {
 	UserID string `json:"user_id"`
-}
-
-type ClientReadPayload struct {
-	MessageID string `json:"message_id"`
 }
 
 func NewEvent(eventType string, payload any) (Event, error) {

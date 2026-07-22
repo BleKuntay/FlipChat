@@ -178,11 +178,6 @@ func (c *Client) handleInbound(ctx context.Context, raw []byte) {
 			)
 		}
 
-	case EventClientRead:
-		logger.Debug("ws: message.read received (not yet processed)",
-			zap.String("user_id", c.userID),
-		)
-
 	default:
 		logger.Warn("ws: unknown event type",
 			zap.String("user_id", c.userID),
