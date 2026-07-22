@@ -92,7 +92,14 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, request *Upd
 		return nil, ErrUserNotUpdated
 	}
 
-	return s.repository.UpdateProfile(ctx, user)
+	response, err := s.repository.UpdateProfile(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("user: profile updated", zap.String("user_id", userID))
+
+	return response, nil
 }
 
 func (s *Service) UpdateEmail(ctx context.Context, userID string, request *UpdateEmailRequest) (*UpdateEmailResponse, error) {
@@ -104,6 +111,8 @@ func (s *Service) UpdateEmail(ctx context.Context, userID string, request *Updat
 	if !shared.VerifyPassword(request.CurrentPassword, user.Password) {
 		return nil, ErrInvalidPassword
 	}
+
+	logger.Info("user: email updated", zap.String("user_id", userID))
 
 	return s.repository.UpdateEmail(ctx, userID, request)
 }
@@ -127,11 +136,19 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, request *Ch
 		return err
 	}
 
+	logger.Info("user: password changed", zap.String("user_id", userID))
+
 	return s.repository.UpdatePassword(ctx, user.ID, hashedPassword)
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, userID string) error {
-	return s.repository.DeleteByID(ctx, userID)
+	if err := s.repository.DeleteByID(ctx, userID); err != nil {
+		return err
+	}
+
+	logger.Info("user: account deleted", zap.String("user_id", userID))
+
+	return nil
 }
 
 func (s *Service) FindUserByID(ctx context.Context, requesterID string, param *GetUserURI) (*Response, error) {
@@ -150,6 +167,11 @@ func (s *Service) FindUserByID(ctx context.Context, requesterID string, param *G
 
 	isOnline, err := s.presenceChecker.IsOnline(ctx, param.ID)
 	if err != nil {
+		logger.Warn("user: failed to check presence, defaulting to offline",
+			zap.String("user_id", param.ID),
+			zap.Error(err),
+		)
+
 		isOnline = false
 	}
 
@@ -197,9 +219,13 @@ func (s *Service) Search(ctx context.Context, userID string, query *SearchQuery)
 		online, err := s.presenceChecker.IsOnline(ctx, summaries[i].ID)
 		if err == nil {
 			summaries[i].IsOnline = online
-			logger.Debug("set online", zap.String("user_id", summaries[i].ID), zap.Bool("online", online))
 		}
 	}
+
+	logger.Debug("user: search completed",
+		zap.String("query", query.Q),
+		zap.Int("result_count", len(summaries)),
+	)
 
 	return &SearchResponse{
 		Data:       summaries,
