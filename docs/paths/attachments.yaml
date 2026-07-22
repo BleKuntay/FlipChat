@@ -1,0 +1,90 @@
+paths:
+  /attachments/upload:
+    post:
+      tags: [attachments]
+      summary: Upload a file attachment
+      description: |
+        Accepts multipart/form-data with a single `file` field.
+        Supported types: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
+        Returns attachment metadata to be passed when sending a message.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/AttachmentResponse'
+        "400":
+          $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "422":
+          $ref: '../openapi.yaml#/components/responses/UnprocessableEntity'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /attachments/{id}:
+    get:
+      tags: [attachments]
+      summary: Download a file attachment
+      description: |
+        Streams the file directly. Only participants of the conversation
+        that contains the attachment can download.
+        Returns 404 if the attachment belongs to a deleted message.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Attachment ID
+      responses:
+        "200":
+          description: File stream
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: "image/jpeg"
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'inline; filename="photo.jpg"'
+            Content-Length:
+              schema:
+                type: integer
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'

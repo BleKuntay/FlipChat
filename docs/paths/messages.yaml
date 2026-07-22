@@ -57,7 +57,7 @@ paths:
       tags: [messages]
       summary: Send a message in a conversation
       description: |
-        Sends a text message. Optionally quote-reply another message
+        Sends a text message, attachment, or both. Optionally quote-reply another message
         in the same conversation via `reply_to_id`.
         Only participants can send. Blocked users cannot send.
       parameters:
@@ -74,17 +74,31 @@ paths:
           application/json:
             schema:
               type: object
-              required: [content]
               properties:
                 content:
                   type: string
-                  example: "halo!"
-                  description: Message text, must not be empty or whitespace only
+                  nullable: true
+                  description: Message text. Required if attachment_id is not provided.
                 reply_to_id:
                   type: string
                   format: uuid
                   nullable: true
                   description: ID of the message being replied to (must be in same conversation)
+                attachment_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: ID from POST /attachments/upload. Required if content is not provided.
+                filename:
+                  type: string
+                  nullable: true
+                mime_type:
+                  type: string
+                  nullable: true
+                size:
+                  type: integer
+                  format: int64
+                  nullable: true
       responses:
         "201":
           description: Message sent successfully
@@ -94,6 +108,135 @@ paths:
                 $ref: '../openapi.yaml#/components/schemas/MessageResponse'
         "400":
           $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+      
+  /conversations/{id}/messages/{msg_id}:
+    patch:
+      tags: [messages]
+      summary: Edit a message
+      description: |
+        Only the sender can edit. Edit window is 15 minutes from creation.
+        Deleted messages cannot be edited.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation ID
+        - name: msg_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Message ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  example: "pesan yang sudah diedit"
+      responses:
+        "200":
+          description: Message edited successfully
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/MessageResponse'
+        "400":
+          $ref: '../openapi.yaml#/components/responses/BadRequest'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+    delete:
+      tags: [messages]
+      summary: Delete a message
+      description: |
+        Soft delete — content is cleared but the message record remains.
+        Only the sender can delete. Already-deleted messages return 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation ID
+        - name: msg_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Message ID
+      responses:
+        "200":
+          description: Message deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/MessageResponse'
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "403":
+          $ref: '../openapi.yaml#/components/responses/Forbidden'
+        "404":
+          $ref: '../openapi.yaml#/components/responses/NotFound'
+        "409":
+          $ref: '../openapi.yaml#/components/responses/Conflict'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+
+  /conversations/{id}/messages/{msg_id}/read:
+    post:
+      tags: [messages]
+      summary: Mark a message as read
+      description: |
+        Only the recipient (non-sender) can mark as read.
+        Deleted messages cannot be marked as read.
+        Already-read messages return the existing response without error.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation ID
+        - name: msg_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Message ID
+      responses:
+        "200":
+          description: Message marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/MessageResponse'
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
         "403":

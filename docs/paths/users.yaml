@@ -43,7 +43,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/UserDetail'
+                $ref: '../openapi.yaml#/components/schemas/MeResponse'
         "400":
           $ref: '../openapi.yaml#/components/responses/BadRequest'
         "401":
@@ -125,8 +125,16 @@ paths:
                   format: password
                   example: "NewSecret456"
       responses:
-        "204":
+        "200":
           description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "password changed successfully"
         "400":
           $ref: '../openapi.yaml#/components/responses/BadRequest'
         "401":

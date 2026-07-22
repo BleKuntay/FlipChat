@@ -95,8 +95,31 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        "204":
+        "200":
           description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "logged out successfully"
+        "401":
+          $ref: '../openapi.yaml#/components/responses/Unauthorized'
+        "500":
+          $ref: '../openapi.yaml#/components/responses/InternalServerError'
+  
+  /auth/logout-all:
+    post:
+      tags: [auth]
+      summary: Logout all sessions
+      description: Revokes all active refresh tokens for the current user.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: All sessions revoked successfully
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
         "500":

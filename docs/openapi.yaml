@@ -2,7 +2,7 @@ openapi: "3.1.0"
 
 info:
   title: FlipChat API
-  version: "0.1.0"
+  version: "0.2.0"
   description: |
     REST API for FlipChat — a real-time one-to-one chat application.
 
@@ -29,6 +29,8 @@ tags:
     description: One-to-one conversation management
   - name: messages
     description: Sending and retrieving messages within a conversation
+  - name: attachments
+    description: File upload and download
 
 security:
   - bearerAuth: []
@@ -86,6 +88,15 @@ components:
           example:
             error: "bad request"
 
+    UnprocessableEntity:
+      description: File validation failed (unsupported type or too large)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "unsupported file type: only JPEG, PNG, GIF, WebP allowed"
+
     InternalServerError:
       description: Unexpected server error
       content:
@@ -118,6 +129,9 @@ components:
           type: string
           format: uri
           nullable: true
+        is_online:
+          type: boolean
+          default: false
         last_seen_at:
           type: string
           format: date-time
@@ -147,13 +161,46 @@ components:
               type: string
               format: email
 
+    AuthUser:
+      description: |
+        User payload returned on register/login. Intentionally excludes
+        presence fields (is_online, last_seen_at) — the caller is the
+        user themselves, at the moment of authenticating, so presence
+        is not meaningful information here. See MeResponse for the
+        presence-aware profile schema used by GET /users/me.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        username:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        language:
+          type: string
+          example: "en"
+        created_at:
+          type: string
+          format: date-time
+        email:
+          type: string
+          format: email
+
     AuthResponse:
       type: object
       properties:
         access_token:
           type: string
         user:
-          $ref: '#/components/schemas/MeResponse'
+          $ref: '#/components/schemas/AuthUser'
 
     FriendResponse:
       type: object
@@ -189,23 +236,30 @@ components:
           type: string
           format: date-time
 
-    BlockedUserResponse:
+    BlockResponse:
+      type: object
+      properties:
+        blocker_id:
+          type: string
+          format: uuid
+        blocked_id:
+          type: string
+          format: uuid
+
+    BlockedSummary:
       type: object
       properties:
         user_id:
           type: string
           format: uuid
-        username:
-          type: string
         name:
+          type: string
+        username:
           type: string
         avatar_url:
           type: string
           format: uri
           nullable: true
-        blocked_at:
-          type: string
-          format: date-time
 
     ConversationResponse:
       type: object
@@ -255,13 +309,44 @@ components:
         metadata:
           type: object
           nullable: true
-          description: Reserved for future use (attachments, Phase 2)
+          description: Attachment metadata (attachment_id, object_key, filename, mime_type, size, uploader_id)
         is_edited:
+          type: boolean
+          default: false
+        is_deleted:
           type: boolean
           default: false
         created_at:
           type: string
           format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AttachmentResponse:
+      type: object
+      properties:
+        attachment_id:
+          type: string
+          format: uuid
+        object_key:
+          type: string
+        filename:
+          type: string
+        mime_type:
+          type: string
+          example: "image/jpeg"
+        size:
+          type: integer
+          format: int64
+        uploader_id:
+          type: string
+          format: uuid
 
 paths:
   /auth/register:
@@ -270,6 +355,8 @@ paths:
     $ref: './paths/auth.yaml#/paths/~1auth~1login'
   /auth/logout:
     $ref: './paths/auth.yaml#/paths/~1auth~1logout'
+  /auth/logout-all:
+    $ref: './paths/auth.yaml#/paths/~1auth~1logout-all'
   /auth/refresh:
     $ref: './paths/auth.yaml#/paths/~1auth~1refresh'
 
@@ -290,15 +377,17 @@ paths:
     $ref: './paths/friends.yaml#/paths/~1friends~1requests'
   /friends/{id}:
     $ref: './paths/friends.yaml#/paths/~1friends~1{id}'
+  /friends/requests/{id}:
+    $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}'
   /friends/requests/{id}/accept:
     $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}~1accept'
   /friends/requests/{id}/decline:
     $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}~1decline'
 
-  /blocks:
-    $ref: './paths/blocks.yaml#/paths/~1blocks'
-  /blocks/{id}:
-    $ref: './paths/blocks.yaml#/paths/~1blocks~1{id}'
+  /blocks/me/blocks:
+    $ref: './paths/blocks.yaml#/paths/~1blocks~1me~1blocks'
+  /blocks/{id}/block:
+    $ref: './paths/blocks.yaml#/paths/~1blocks~1{id}~1block'
 
   /conversations:
     $ref: './paths/conversations.yaml#/paths/~1conversations'
@@ -307,3 +396,12 @@ paths:
 
   /conversations/{id}/messages:
     $ref: './paths/messages.yaml#/paths/~1conversations~1{id}~1messages'
+  /conversations/{id}/messages/{msg_id}:
+    $ref: './paths/messages.yaml#/paths/~1conversations~1{id}~1messages~1{msg_id}'
+  /conversations/{id}/messages/{msg_id}/read:
+    $ref: './paths/messages.yaml#/paths/~1conversations~1{id}~1messages~1{msg_id}~1read'
+
+  /attachments/upload:
+    $ref: './paths/attachments.yaml#/paths/~1attachments~1upload'
+  /attachments/{id}:
+    $ref: './paths/attachments.yaml#/paths/~1attachments~1{id}'

@@ -1,5 +1,5 @@
 paths:
-  /blocks:
+  /blocks/me/blocks:
     get:
       tags: [blocks]
       summary: List blocked users
@@ -9,7 +9,6 @@ paths:
           required: false
           schema:
             type: string
-          description: Cursor from previous page for pagination
         - name: limit
           in: query
           required: false
@@ -27,7 +26,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '../openapi.yaml#/components/schemas/BlockedUserResponse'
+                      $ref: '../openapi.yaml#/components/schemas/BlockedSummary'
                   next_cursor:
                     type: string
                     nullable: true
@@ -36,7 +35,7 @@ paths:
         "500":
           $ref: '../openapi.yaml#/components/responses/InternalServerError'
 
-  /blocks/{id}:
+  /blocks/{id}/block:
     post:
       tags: [blocks]
       summary: Block a user
@@ -53,7 +52,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/BlockedUserResponse'
+                $ref: '../openapi.yaml#/components/schemas/BlockResponse'
         "400":
           $ref: '../openapi.yaml#/components/responses/BadRequest'
         "401":
