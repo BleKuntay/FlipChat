@@ -2,6 +2,8 @@ package httputil
 
 import (
 	"errors"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
+	"go.uber.org/zap"
 
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/gofiber/fiber/v3"
@@ -20,6 +22,11 @@ func ErrorStatus(c fiber.Ctx, err error) error {
 	case errors.Is(err, apperr.ErrUnauthorized):
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	default:
+		logger.Error("unhandled error",
+			zap.String("method", c.Method()),
+			zap.String("path", c.Path()),
+			zap.Error(err),
+		)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
 }
