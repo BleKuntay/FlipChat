@@ -30,6 +30,7 @@ import (
 func main() {
 	config.LoadConfig()
 	setupLogger()
+	defer logger.Sync()
 
 	if err := setupJWT(); err != nil {
 		logger.Fatal("JWT init failed", zap.Error(err))
@@ -112,7 +113,6 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, mini
 
 func setupLogger() {
 	logger.Init(config.App.AppEnv)
-	defer logger.Sync()
 }
 
 func setupPostgres() *sqlx.DB {
