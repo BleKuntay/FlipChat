@@ -3,6 +3,8 @@ package message
 import (
 	"context"
 	"encoding/json"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
+	"go.uber.org/zap"
 	"strings"
 	"time"
 
@@ -189,6 +191,12 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 	response := toResponse(msg)
 	s.publisher.FanOutToConversation(ctx, userID, other, "message.new", response)
 
+	logger.Info("message: sent",
+		zap.String("message_id", response.ID),
+		zap.String("conversation_id", response.ConversationID),
+		zap.String("sender_id", response.SenderID),
+	)
+
 	return response, nil
 }
 
@@ -224,6 +232,11 @@ func (s *Service) EditMessage(ctx context.Context, userID, conversationID, messa
 	response := toResponse(msg)
 	s.publisher.FanOutToConversation(ctx, userID, other, "message.edited", response)
 
+	logger.Info("message: edited",
+		zap.String("message_id", response.ID),
+		zap.String("conversation_id", response.ConversationID),
+	)
+
 	return response, nil
 }
 
@@ -250,7 +263,7 @@ func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, mes
 	msg.DeletedAt = &now
 
 	if s.objects != nil && msg.Metadata != nil {
-		if err := s.deleteAttachmentObject(ctx, msg.Metadata); err != nil {
+		if err := s.deleteAttachmentObject(ctx, msg.ID, msg.Metadata); err != nil {
 			return nil, err
 		}
 	}
@@ -261,6 +274,11 @@ func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, mes
 
 	response := toResponse(msg)
 	s.publisher.FanOutToConversation(ctx, userID, other, "message.deleted", response)
+
+	logger.Info("message: deleted",
+		zap.String("message_id", response.ID),
+		zap.String("conversation_id", response.ConversationID),
+	)
 
 	return response, nil
 }
@@ -294,6 +312,11 @@ func (s *Service) MarkAsRead(ctx context.Context, userID, conversationID, messag
 
 	response := toResponse(message)
 	s.publisher.FanOutToConversation(ctx, userID, other, "message.read", response)
+
+	logger.Info("message: marked as read",
+		zap.String("message_id", response.ID),
+		zap.String("reader_id", userID),
+	)
 
 	return response, nil
 }
@@ -394,9 +417,14 @@ func derefInt64(n *int64) int64 {
 	return *n
 }
 
-func (s *Service) deleteAttachmentObject(ctx context.Context, raw *json.RawMessage) error {
+func (s *Service) deleteAttachmentObject(ctx context.Context, messageID string, raw *json.RawMessage) error {
 	var metadata map[string]any
 	if err := json.Unmarshal(*raw, &metadata); err != nil {
+		logger.Warn("message: failed to unmarshal attachment metadata, skipping object deletion",
+			zap.String("message_id", messageID),
+			zap.Error(err),
+		)
+
 		return nil
 	}
 
