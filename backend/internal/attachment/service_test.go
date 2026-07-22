@@ -297,7 +297,7 @@ func TestService_Upload_SizeExceeds_5MBPlus1(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "huge.jpg", oversizeSize, reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrFileTooLarge)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
@@ -343,7 +343,7 @@ func TestService_Upload_Size0_Rejected(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "empty.jpg", 0, reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrFileTooLarge)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
@@ -357,7 +357,7 @@ func TestService_Upload_SizeNegative_Rejected(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "negative.jpg", -1, reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrFileTooLarge)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
@@ -373,7 +373,7 @@ func TestService_Upload_PDF_MagicBytes_Rejected(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "doc.pdf", int64(103), reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
@@ -389,7 +389,7 @@ func TestService_Upload_Executable_MagicBytes_Rejected(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "malware.exe", int64(102), reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
@@ -405,7 +405,7 @@ func TestService_Upload_ZIP_MagicBytes_Rejected(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "archive.zip", int64(102), reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
@@ -436,7 +436,7 @@ func TestService_Upload_12BytesBadImage(t *testing.T) {
 	svc := newTestService(objects, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "invalid.jpg", int64(12), reader)
 
-	assert.ErrorIs(t, err, apperr.ErrBadRequest)
+	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
 	assert.Nil(t, resp)
 	objects.AssertNotCalled(t, "PutObject")
 }
