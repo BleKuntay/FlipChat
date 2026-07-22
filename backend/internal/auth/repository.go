@@ -183,9 +183,3 @@ func (r *Repository) RotateRefreshToken(ctx context.Context, oldToken, newToken 
 	_, err = pipe.Exec(ctx)
 	return err
 }
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-func isNoRows(err error) bool {
-	return err != nil && err.Error() == "sql: no rows in result set"
-}
