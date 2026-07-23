@@ -21,9 +21,9 @@ func NewHandler(service ServiceInterface) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(router fiber.Router) {
-	router.Post("/:id/block", h.BlockUser)
-	router.Delete("/:id/block", h.UnblockUser)
-	router.Get("/me/blocks", h.GetBlockList)
+	router.Get("/", h.GetBlockList)
+	router.Post("/:id", h.BlockUser)
+	router.Delete("/:id", h.UnblockUser)
 }
 
 func (h *Handler) BlockUser(c fiber.Ctx) error {

@@ -75,7 +75,7 @@ func decodeJSON(t *testing.T, resp *http.Response, dest any) {
 }
 
 // ------------------------------------------------------------------ //
-// POST /:id/block                                                      //
+// POST /:id                                                          //
 // ------------------------------------------------------------------ //
 
 func TestHandler_BlockUser(t *testing.T) {
@@ -90,7 +90,7 @@ func TestHandler_BlockUser(t *testing.T) {
 		want := &block.Response{BlockerID: callerID, BlockedID: targetID}
 		svc.On("BlockUser", mock.Anything, req).Return(want, nil)
 
-		resp := doRequest(t, app, http.MethodPost, "/"+targetID+"/block") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodPost, "/"+targetID) //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusCreated, resp.StatusCode)
 
 		var body block.Response
@@ -107,7 +107,7 @@ func TestHandler_BlockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("BlockUser", mock.Anything, req).Return(nil, apperr.ErrBadRequest)
 
-		resp := doRequest(t, app, http.MethodPost, "/"+targetID+"/block") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodPost, "/"+targetID) //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 	})
 
@@ -118,13 +118,13 @@ func TestHandler_BlockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("BlockUser", mock.Anything, req).Return(nil, errors.New("unexpected"))
 
-		resp := doRequest(t, app, http.MethodPost, "/"+targetID+"/block") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodPost, "/"+targetID) //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
 	})
 }
 
 // ------------------------------------------------------------------ //
-// DELETE /:id/block                                                    //
+// DELETE /:id                                                        //
 // ------------------------------------------------------------------ //
 
 func TestHandler_UnblockUser(t *testing.T) {
@@ -138,7 +138,7 @@ func TestHandler_UnblockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("UnblockUser", mock.Anything, req).Return(nil)
 
-		resp := doRequest(t, app, http.MethodDelete, "/"+targetID+"/block") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodDelete, "/"+targetID) //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 		svc.AssertExpectations(t)
 	})
@@ -150,7 +150,7 @@ func TestHandler_UnblockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("UnblockUser", mock.Anything, req).Return(apperr.ErrBadRequest)
 
-		resp := doRequest(t, app, http.MethodDelete, "/"+targetID+"/block") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodDelete, "/"+targetID) //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 	})
 
@@ -161,13 +161,13 @@ func TestHandler_UnblockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("UnblockUser", mock.Anything, req).Return(errors.New("unexpected"))
 
-		resp := doRequest(t, app, http.MethodDelete, "/"+targetID+"/block") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodDelete, "/"+targetID) //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
 	})
 }
 
 // ------------------------------------------------------------------ //
-// GET /me/blocks                                                       //
+// GET /                                                              //
 // ------------------------------------------------------------------ //
 
 func TestHandler_GetBlockList(t *testing.T) {
@@ -187,7 +187,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(want, nil)
 
-		resp := doRequest(t, app, http.MethodGet, "/me/blocks?limit=2") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodGet, "/?limit=2") //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
 		var body block.ListResponse
@@ -208,7 +208,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(want, nil)
 
-		resp := doRequest(t, app, http.MethodGet, "/me/blocks?limit=10") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodGet, "/?limit=10") //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
 		var body block.ListResponse
@@ -224,7 +224,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		want := &block.ListResponse{Data: []block.BlockedSummary{}}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(want, nil)
 
-		resp := doRequest(t, app, http.MethodGet, "/me/blocks") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodGet, "/") //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 		svc.AssertExpectations(t)
 	})
@@ -236,7 +236,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		query := block.ListQuery{Limit: 0}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(nil, errors.New("unexpected"))
 
-		resp := doRequest(t, app, http.MethodGet, "/me/blocks") //nolint:bodyclose // body closed via t.Cleanup in helper
+		resp := doRequest(t, app, http.MethodGet, "/") //nolint:bodyclose // body closed via t.Cleanup in helper
 		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
 	})
 }
