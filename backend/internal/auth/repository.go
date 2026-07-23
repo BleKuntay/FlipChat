@@ -109,7 +109,7 @@ func (r *Repository) FindTokenByToken(ctx context.Context, token string) (*Refre
 		return nil, err
 	}
 
-	ttl, err := r.rdb.TTL(ctx, tokenKey(userID)).Result()
+	ttl, err := r.rdb.TTL(ctx, tokenKey(token)).Result()
 	if err != nil {
 		return nil, err
 	}
