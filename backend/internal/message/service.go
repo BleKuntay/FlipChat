@@ -323,6 +323,14 @@ func (s *Service) MarkAsRead(ctx context.Context, userID, conversationID, messag
 		return nil, err
 	}
 
+	blocked, err := s.blockChecker.IsBlockedEitherWay(ctx, userID, other)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, apperr.ErrNotFound
+	}
+
 	message, err := s.fetchMessageInConversation(ctx, messageID, conversationID)
 	if err != nil {
 		return nil, err
