@@ -68,11 +68,15 @@ func (c *Client) Run(ctx context.Context) {
 	go c.writePump()
 	c.readPump(ctx)
 
-	c.hub.Unregister(c)
-	c.fanOutPresence(ctx, EventPresenceOffline)
+	// Only clear presence if this client was still the active connection.
+	// If the user reconnected (e.g. browser refresh), Register already replaced
+	// this client, and we must not overwrite the new connection's presence.
+	if c.hub.Unregister(c) {
+		c.fanOutPresence(ctx, EventPresenceOffline)
 
-	if err := c.presence.SetOffline(ctx, c.userID); err != nil {
-		logger.Error("ws: failed to set offline", zap.String("user_id", c.userID), zap.Error(err))
+		if err := c.presence.SetOffline(ctx, c.userID); err != nil {
+			logger.Error("ws: failed to set offline", zap.String("user_id", c.userID), zap.Error(err))
+		}
 	}
 
 	if err := c.lastSeenUpdate.UpdateLastSeen(ctx, c.userID, time.Now()); err != nil {

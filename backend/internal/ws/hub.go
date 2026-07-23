@@ -46,16 +46,19 @@ func (h *Hub) Register(client *Client) {
 }
 
 // Unregister removes a client from the hub.
-// No-op if the client is no longer the current connection for that userID
-// (e.g. already replaced by a newer connection).
-func (h *Hub) Unregister(client *Client) {
+// Returns true if this client was the current connection and was removed.
+// Returns false if the client was already replaced by a newer connection,
+// in which case presence and fanout must NOT be cleared.
+func (h *Hub) Unregister(client *Client) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if current, ok := h.clients[client.userID]; ok && current == client {
 		delete(h.clients, client.userID)
 		logger.Info("ws: client unregistered", zap.String("user_id", client.userID))
+		return true
 	}
+	return false
 }
 
 // SendToUser delivers an event to a specific user if they are connected.
