@@ -148,6 +148,7 @@ func TestHandler_Upload_ServiceErrBadRequest_Returns400(t *testing.T) {
 
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
@@ -168,6 +169,7 @@ func TestHandler_Upload_ServiceInternalError_Returns500(t *testing.T) {
 
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	svc.AssertExpectations(t)
@@ -194,6 +196,7 @@ func TestHandler_Upload_UserIDFromAuthContext(t *testing.T) {
 
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	svc.AssertExpectations(t)
@@ -222,6 +225,7 @@ func TestHandler_Download_Success_Returns200(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	svc.AssertExpectations(t)
@@ -246,6 +250,7 @@ func TestHandler_Download_ContentTypeHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, "image/webp", resp.Header.Get("Content-Type"))
 	svc.AssertExpectations(t)
@@ -273,6 +278,7 @@ func TestHandler_Download_ContentDispositionHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, `inline; filename="vacation_photo.jpg"`, resp.Header.Get("Content-Disposition"))
 	svc.AssertExpectations(t)
@@ -298,6 +304,7 @@ func TestHandler_Download_ContentLengthHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, "12345", resp.Header.Get("Content-Length"))
 	svc.AssertExpectations(t)
@@ -322,6 +329,7 @@ func TestHandler_Download_AttachmentIDFromPathParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	svc.AssertExpectations(t)
@@ -338,6 +346,7 @@ func TestHandler_Download_ServiceErrNotFound_Returns404(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
@@ -358,6 +367,7 @@ func TestHandler_Download_ServiceErrForbidden_Returns403(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	svc.AssertExpectations(t)
@@ -374,6 +384,7 @@ func TestHandler_Download_ServiceInternalError_Returns500(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/attachments/"+attachmentID, nil)
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	svc.AssertExpectations(t)

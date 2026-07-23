@@ -11,9 +11,16 @@ linters:
   settings:
     errcheck:
       exclude-functions:
+        # Idiomatic defer cleanup — error intentionally discarded at call site.
+        # Concrete types listed because errcheck does not match by interface.
         - (*database/sql.Rows).Close
         - (*database/sql.Tx).Rollback
         - (*mime/multipart.Writer).Close
         - (*github.com/fasthttp/websocket.Conn).Close
         - github.com/BleKuntay/FlipChat/backend/pkg/logger.Sync
         - (*github.com/golang-migrate/migrate/v4.Migrate).Close
+        # multipart.File and io.ReadCloser: Close() called in defer after
+        # the resource is no longer usable — error unactionable.
+        - (mime/multipart.File).Close
+        - (io.ReadCloser).Close
+        - (net/http.ResponseBody).Close
