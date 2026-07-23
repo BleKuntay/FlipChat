@@ -95,6 +95,7 @@ func TestHandler_Upload_ValidFile_Returns201(t *testing.T) {
 
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -112,6 +113,7 @@ func TestHandler_Upload_NoFormFile_Returns400(t *testing.T) {
 
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
@@ -129,6 +131,7 @@ func TestHandler_Upload_WrongFieldName_Returns400(t *testing.T) {
 
 	resp, err := newTestApp(svc).Test(req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	svc.AssertNotCalled(t, "Upload")

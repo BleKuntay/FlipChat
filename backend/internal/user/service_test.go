@@ -23,8 +23,6 @@ var (
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func ptr[T any](v T) *T { return &v }
-
 func stubUser() *User {
 	bio := "Hello world!"
 	avatar := "https://cdn.example.com/avatar.png"

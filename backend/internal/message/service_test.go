@@ -141,7 +141,7 @@ func TestService_SendMessage_HappyPath(t *testing.T) {
 			m.Content != nil && *m.Content == content &&
 			m.ReplyToID == nil &&
 			m.ID == fixedID &&
-			m.CreatedAt == fixedTime
+			m.CreatedAt.Equal(fixedTime)
 	})).Return(nil)
 
 	svc := newTestService(repo, convs, blks,

@@ -11,7 +11,9 @@ linters:
   settings:
     errcheck:
       exclude-functions:
-        - (io.Closer).Close
+        - (*database/sql.Rows).Close
         - (*database/sql.Tx).Rollback
+        - (*mime/multipart.Writer).Close
+        - (*github.com/fasthttp/websocket.Conn).Close
         - github.com/BleKuntay/FlipChat/backend/pkg/logger.Sync
         - (*github.com/golang-migrate/migrate/v4.Migrate).Close
