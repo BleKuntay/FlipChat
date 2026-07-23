@@ -290,14 +290,20 @@ func (s *Service) DeleteMessage(ctx context.Context, userID, conversationID, mes
 	msg.DeletedBy = &userID
 	msg.DeletedAt = &now
 
-	if s.objects != nil && msg.Metadata != nil {
-		if err := s.deleteAttachmentObject(ctx, msg.ID, msg.Metadata); err != nil {
-			return nil, err
-		}
-	}
-
 	if err := s.repository.Delete(ctx, msg); err != nil {
 		return nil, err
+	}
+
+	// Delete the MinIO object after the DB row is committed.
+	// A failure here is logged but does not fail the request — a dangling
+	// object is recoverable; an inconsistent DB row is not.
+	if s.objects != nil && msg.Metadata != nil {
+		if err := s.deleteAttachmentObject(ctx, msg.ID, msg.Metadata); err != nil {
+			logger.Error("message: failed to delete attachment object, manual cleanup may be needed",
+				zap.String("message_id", msg.ID),
+				zap.Error(err),
+			)
+		}
 	}
 
 	response := toResponse(msg)
