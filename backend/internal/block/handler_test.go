@@ -62,9 +62,10 @@ func newApp(svc *mockService, userID string) *fiber.App {
 	return app
 }
 
-func doRequest(app *fiber.App, method, url string) *http.Response {
+func doRequest(t *testing.T, app *fiber.App, method, url string) *http.Response {
 	req := httptest.NewRequest(method, url, nil)
-	resp, _ := app.Test(req)
+	resp, _ := app.Test(req) //nolint:bodyclose // closed via t.Cleanup below
+	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
 
@@ -89,7 +90,7 @@ func TestHandler_BlockUser(t *testing.T) {
 		want := &block.Response{BlockerID: callerID, BlockedID: targetID}
 		svc.On("BlockUser", mock.Anything, req).Return(want, nil)
 
-		resp := doRequest(app, http.MethodPost, "/"+targetID+"/block")
+		resp := doRequest(t, app, http.MethodPost, "/"+targetID+"/block")
 		assert.Equal(t, fiber.StatusCreated, resp.StatusCode)
 
 		var body block.Response
@@ -106,7 +107,7 @@ func TestHandler_BlockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("BlockUser", mock.Anything, req).Return(nil, apperr.ErrBadRequest)
 
-		resp := doRequest(app, http.MethodPost, "/"+targetID+"/block")
+		resp := doRequest(t, app, http.MethodPost, "/"+targetID+"/block")
 		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 	})
 
@@ -117,7 +118,7 @@ func TestHandler_BlockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("BlockUser", mock.Anything, req).Return(nil, errors.New("unexpected"))
 
-		resp := doRequest(app, http.MethodPost, "/"+targetID+"/block")
+		resp := doRequest(t, app, http.MethodPost, "/"+targetID+"/block")
 		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
 	})
 }
@@ -137,7 +138,7 @@ func TestHandler_UnblockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("UnblockUser", mock.Anything, req).Return(nil)
 
-		resp := doRequest(app, http.MethodDelete, "/"+targetID+"/block")
+		resp := doRequest(t, app, http.MethodDelete, "/"+targetID+"/block")
 		assert.Equal(t, fiber.StatusNoContent, resp.StatusCode)
 		svc.AssertExpectations(t)
 	})
@@ -149,7 +150,7 @@ func TestHandler_UnblockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("UnblockUser", mock.Anything, req).Return(apperr.ErrBadRequest)
 
-		resp := doRequest(app, http.MethodDelete, "/"+targetID+"/block")
+		resp := doRequest(t, app, http.MethodDelete, "/"+targetID+"/block")
 		assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 	})
 
@@ -160,7 +161,7 @@ func TestHandler_UnblockUser(t *testing.T) {
 		req := block.Request{BlockerID: callerID, BlockedID: targetID}
 		svc.On("UnblockUser", mock.Anything, req).Return(errors.New("unexpected"))
 
-		resp := doRequest(app, http.MethodDelete, "/"+targetID+"/block")
+		resp := doRequest(t, app, http.MethodDelete, "/"+targetID+"/block")
 		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
 	})
 }
@@ -186,7 +187,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(want, nil)
 
-		resp := doRequest(app, http.MethodGet, "/me/blocks?limit=2")
+		resp := doRequest(t, app, http.MethodGet, "/me/blocks?limit=2")
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
 		var body block.ListResponse
@@ -207,7 +208,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(want, nil)
 
-		resp := doRequest(app, http.MethodGet, "/me/blocks?limit=10")
+		resp := doRequest(t, app, http.MethodGet, "/me/blocks?limit=10")
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
 		var body block.ListResponse
@@ -223,7 +224,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		want := &block.ListResponse{Data: []block.BlockedSummary{}}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(want, nil)
 
-		resp := doRequest(app, http.MethodGet, "/me/blocks")
+		resp := doRequest(t, app, http.MethodGet, "/me/blocks")
 		assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 		svc.AssertExpectations(t)
 	})
@@ -235,7 +236,7 @@ func TestHandler_GetBlockList(t *testing.T) {
 		query := block.ListQuery{Limit: 0}
 		svc.On("GetBlockList", mock.Anything, callerID, query).Return(nil, errors.New("unexpected"))
 
-		resp := doRequest(app, http.MethodGet, "/me/blocks")
+		resp := doRequest(t, app, http.MethodGet, "/me/blocks")
 		assert.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
 	})
 }

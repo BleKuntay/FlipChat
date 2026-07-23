@@ -80,7 +80,7 @@ func doRequest(t *testing.T, app *fiber.App, method, path string, body any) *htt
 	req := httptest.NewRequest(method, path, bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, _ := app.Test(req)
+	resp, _ := app.Test(req) //nolint:bodyclose // closed via t.Cleanup below
 	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
@@ -96,7 +96,7 @@ func doRequestWithCookie(t *testing.T, app *fiber.App, method, path string, body
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: cookieName, Value: cookieValue})
 
-	resp, _ := app.Test(req)
+	resp, _ := app.Test(req) //nolint:bodyclose // closed via t.Cleanup below
 	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
@@ -162,7 +162,7 @@ func TestHandler_Register(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/register", bytes.NewBufferString("not-json"))
 		req.Header.Set("Content-Type", "application/json")
-		resp, _ := app.Test(req)
+		resp, _ := app.Test(req) //nolint:bodyclose // closed via t.Cleanup below
 		t.Cleanup(func() { resp.Body.Close() })
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -277,7 +277,7 @@ func TestHandler_Login(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewBufferString("not-json"))
 		req.Header.Set("Content-Type", "application/json")
-		resp, _ := app.Test(req)
+		resp, _ := app.Test(req) //nolint:bodyclose // closed via t.Cleanup below
 		t.Cleanup(func() { resp.Body.Close() })
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
