@@ -114,8 +114,18 @@ func (mpc *mockPresenceChecker) IsOnline(ctx context.Context, userID string) (bo
 	return args.Bool(0), args.Error(1)
 }
 
+type mockSessionRevoker struct{ mock.Mock }
+
+func (m *mockSessionRevoker) DeleteTokenByUserID(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
+}
+
 func newTestService(repo RepositoryInterface, bc BlockChecker, pc PresenceChecker) *Service {
-	return NewService(repo, bc, pc)
+	return NewService(repo, bc, pc, nil)
+}
+
+func newTestServiceWithRevoker(repo RepositoryInterface, bc BlockChecker, pc PresenceChecker, sr SessionRevoker) *Service {
+	return NewService(repo, bc, pc, sr)
 }
 
 // ── Me ────────────────────────────────────────────────────────────────────────
@@ -345,16 +355,18 @@ func TestService_UpdateEmail(t *testing.T) {
 func TestService_ChangePassword(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("succeeds with all fields valid", func(t *testing.T) {
+	t.Run("succeeds with all fields valid and revokes sessions", func(t *testing.T) {
 		repo := new(mockRepo)
 		pc := new(mockPresenceChecker)
 		bc := new(mockBlockChecker)
+		sr := new(mockSessionRevoker)
 
 		u := stubUser()
 		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 		repo.On("UpdatePassword", mock.Anything, u.ID, mock.AnythingOfType("string")).Return(nil)
+		sr.On("DeleteTokenByUserID", mock.Anything, u.ID).Return(nil)
 
-		svc := newTestService(repo, bc, pc)
+		svc := newTestServiceWithRevoker(repo, bc, pc, sr)
 		err := svc.ChangePassword(ctx, u.ID, &ChangePasswordRequest{
 			CurrentPassword: "secret123",
 			NewPassword:     "newSecret456",
@@ -363,6 +375,29 @@ func TestService_ChangePassword(t *testing.T) {
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
+		sr.AssertExpectations(t)
+	})
+
+	t.Run("revocation failure does not fail the request", func(t *testing.T) {
+		repo := new(mockRepo)
+		pc := new(mockPresenceChecker)
+		bc := new(mockBlockChecker)
+		sr := new(mockSessionRevoker)
+
+		u := stubUser()
+		repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
+		repo.On("UpdatePassword", mock.Anything, u.ID, mock.AnythingOfType("string")).Return(nil)
+		sr.On("DeleteTokenByUserID", mock.Anything, u.ID).Return(errors.New("redis down"))
+
+		svc := newTestServiceWithRevoker(repo, bc, pc, sr)
+		err := svc.ChangePassword(ctx, u.ID, &ChangePasswordRequest{
+			CurrentPassword: "secret123",
+			NewPassword:     "newSecret456",
+			ConfirmPassword: "newSecret456",
+		})
+
+		require.NoError(t, err)
+		sr.AssertExpectations(t)
 	})
 
 	t.Run("wrong current password returns ErrInvalidPassword", func(t *testing.T) {
@@ -465,18 +500,38 @@ func TestService_ChangePassword(t *testing.T) {
 func TestService_DeleteAccount(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("succeeds", func(t *testing.T) {
+	t.Run("succeeds and revokes sessions", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
 		pc := new(mockPresenceChecker)
+		sr := new(mockSessionRevoker)
 
+		sr.On("DeleteTokenByUserID", mock.Anything, "user-123").Return(nil)
 		repo.On("DeleteByID", mock.Anything, "user-123").Return(nil)
 
-		svc := newTestService(repo, bc, pc)
+		svc := newTestServiceWithRevoker(repo, bc, pc, sr)
 		err := svc.DeleteAccount(ctx, "user-123")
 
 		require.NoError(t, err)
 		repo.AssertExpectations(t)
+		sr.AssertExpectations(t)
+	})
+
+	t.Run("revocation failure does not fail the request", func(t *testing.T) {
+		repo := new(mockRepo)
+		bc := new(mockBlockChecker)
+		pc := new(mockPresenceChecker)
+		sr := new(mockSessionRevoker)
+
+		sr.On("DeleteTokenByUserID", mock.Anything, "user-123").Return(errors.New("redis down"))
+		repo.On("DeleteByID", mock.Anything, "user-123").Return(nil)
+
+		svc := newTestServiceWithRevoker(repo, bc, pc, sr)
+		err := svc.DeleteAccount(ctx, "user-123")
+
+		require.NoError(t, err)
+		repo.AssertExpectations(t)
+		sr.AssertExpectations(t)
 	})
 
 	t.Run("user not found — repository returns ErrNotFound", func(t *testing.T) {

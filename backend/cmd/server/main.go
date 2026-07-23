@@ -73,7 +73,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, mini
 	// ── services ──────────────────────────────────────────────────────────────
 	authSvc := auth.NewService(authRepo)
 	blockSvc := block.NewService(blockRepo)
-	userSvc := user.NewService(userRepo, blockSvc, presenceStore)
+	userSvc := user.NewService(userRepo, blockSvc, presenceStore, authRepo)
 	friendSvc := friend.NewService(friendRepo, blockSvc)
 	conversationSvc := conversation.NewService(conversationRepo, blockSvc)
 	attachmentSvc := attachment.NewService(minioStore, uploadStore, messageRepo, conversationRepo)

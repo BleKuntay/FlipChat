@@ -25,17 +25,26 @@ type PresenceChecker interface {
 	IsOnline(ctx context.Context, userID string) (bool, error)
 }
 
+// SessionRevoker revokes all active sessions for a user.
+// Implemented by auth.Repository; injected via interface to avoid
+// a circular import between user and auth packages.
+type SessionRevoker interface {
+	DeleteTokenByUserID(ctx context.Context, userID string) error
+}
+
 type Service struct {
 	repository      RepositoryInterface
 	blockChecker    BlockChecker
 	presenceChecker PresenceChecker
+	sessionRevoker  SessionRevoker
 }
 
-func NewService(repository RepositoryInterface, blockChecker BlockChecker, presenceChecker PresenceChecker) *Service {
+func NewService(repository RepositoryInterface, blockChecker BlockChecker, presenceChecker PresenceChecker, sessionRevoker SessionRevoker) *Service {
 	return &Service{
 		repository:      repository,
 		blockChecker:    blockChecker,
 		presenceChecker: presenceChecker,
+		sessionRevoker:  sessionRevoker,
 	}
 }
 
@@ -136,12 +145,34 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, request *Ch
 		return err
 	}
 
-	logger.Info("user: password changed", zap.String("user_id", userID))
+	if err := s.repository.UpdatePassword(ctx, user.ID, hashedPassword); err != nil {
+		return err
+	}
 
-	return s.repository.UpdatePassword(ctx, user.ID, hashedPassword)
+	if s.sessionRevoker != nil {
+		if err := s.sessionRevoker.DeleteTokenByUserID(ctx, userID); err != nil {
+			logger.Error("user: failed to revoke sessions after password change",
+				zap.String("user_id", userID),
+				zap.Error(err),
+			)
+		}
+	}
+
+	logger.Info("user: password changed, all sessions revoked", zap.String("user_id", userID))
+
+	return nil
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, userID string) error {
+	if s.sessionRevoker != nil {
+		if err := s.sessionRevoker.DeleteTokenByUserID(ctx, userID); err != nil {
+			logger.Error("user: failed to revoke sessions before account deletion",
+				zap.String("user_id", userID),
+				zap.Error(err),
+			)
+		}
+	}
+
 	if err := s.repository.DeleteByID(ctx, userID); err != nil {
 		return err
 	}
