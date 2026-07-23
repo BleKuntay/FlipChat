@@ -116,6 +116,8 @@ func newTestServiceWithObjects(repo *mockRepo, convs *mockConvStore, blks *mockB
 	return message.NewService(repo, convs, blks, publisher, append(opts, message.WithObjectDeleter(objects))...)
 }
 
+func int64Ptr(n int64) *int64 { return &n }
+
 func makeRawMetadata(objectKey string) *json.RawMessage {
 	b, _ := json.Marshal(map[string]any{
 		"attachment_id": "att-123",
@@ -859,7 +861,10 @@ func TestService_DeleteMessage_InvalidMetadataJSON_SkipsMinIODeleteSucceeds(t *t
 	repo.AssertExpectations(t)
 }
 
-func TestService_DeleteMessage_DeleteObjectFails_ReturnsError(t *testing.T) {
+func TestService_DeleteMessage_DeleteObjectFails_StillSucceeds(t *testing.T) {
+	// After fix #4, MinIO deletion happens after DB commit and its failure
+	// is logged but does not fail the request. A dangling object is
+	// recoverable; an inconsistent DB row is not.
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
 	objects := new(mockObjectDeleter)
@@ -873,14 +878,15 @@ func TestService_DeleteMessage_DeleteObjectFails_ReturnsError(t *testing.T) {
 
 	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
 	repo.On("GetByID", ctx, "msg-1").Return(msg, nil)
+	repo.On("Delete", ctx, mock.Anything).Return(nil)
 	objects.On("DeleteObject", ctx, objectKey).Return(storageErr)
 
 	svc := newTestServiceWithObjects(repo, convs, blks, objects)
 	resp, err := svc.DeleteMessage(ctx, "user-high", "conv-1", "msg-1")
 
-	assert.Nil(t, resp)
-	assert.ErrorIs(t, err, storageErr)
-	repo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+	require.NoError(t, err)
+	assert.True(t, resp.IsDeleted)
+	repo.AssertExpectations(t)
 	objects.AssertExpectations(t)
 }
 
