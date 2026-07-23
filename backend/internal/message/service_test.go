@@ -116,8 +116,6 @@ func newTestServiceWithObjects(repo *mockRepo, convs *mockConvStore, blks *mockB
 	return message.NewService(repo, convs, blks, publisher, append(opts, message.WithObjectDeleter(objects))...)
 }
 
-func int64Ptr(n int64) *int64 { return &n }
-
 func makeRawMetadata(objectKey string) *json.RawMessage {
 	b, _ := json.Marshal(map[string]any{
 		"attachment_id": "att-123",
