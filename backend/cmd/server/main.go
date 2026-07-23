@@ -124,14 +124,17 @@ func setupJWT() error {
 }
 
 func setupApp() *fiber.App {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		// Must be larger than MaxFileSize (5MB) to account for multipart overhead.
+		BodyLimit: 6 * 1024 * 1024,
+	})
 
 	app.Use(fiberLogger.New())
 	app.Use(recover.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     config.App.AllowedOrigins,
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowCredentials: true,
 	}))
 
