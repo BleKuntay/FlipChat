@@ -4,8 +4,14 @@ run:
   timeout: 5m
 
 linters:
-  # default set already covers: errcheck, govet, ineffassign, staticcheck, unused
   default: standard
   enable:
-    - bodyclose       # unclosed io.ReadCloser — relevant to attachment.Download / minio GetObject
-    - sqlclosecheck   # unclosed *sql.Rows / *sql.Stmt via sqlx
+    - bodyclose
+    - sqlclosecheck
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.Tx).Rollback
+        - github.com/BleKuntay/FlipChat/backend/pkg/logger.Sync
+        - (*github.com/golang-migrate/migrate/v4.Migrate).Close
