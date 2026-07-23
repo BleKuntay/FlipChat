@@ -140,7 +140,7 @@ func TestHandler_FindAll(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(t, app, http.MethodGet, "/friends/")
+			resp := doRequest(t, app, http.MethodGet, "/friends/") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
@@ -176,7 +176,7 @@ func TestHandler_ListRequests(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(t, app, http.MethodGet, "/friends/requests")
+			resp := doRequest(t, app, http.MethodGet, "/friends/requests") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
@@ -250,7 +250,7 @@ func TestHandler_AddFriend(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(t, app, http.MethodPost, url)
+			resp := doRequest(t, app, http.MethodPost, url) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 
@@ -294,7 +294,7 @@ func TestHandler_Unfriend(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(t, app, http.MethodDelete, url)
+			resp := doRequest(t, app, http.MethodDelete, url) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
@@ -350,7 +350,7 @@ func TestHandler_AcceptFriendRequest(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(t, app, http.MethodPut, url)
+			resp := doRequest(t, app, http.MethodPut, url) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})

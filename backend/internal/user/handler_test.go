@@ -117,7 +117,7 @@ func TestHandler_GetProfile(t *testing.T) {
 		svc.On("Me", mock.Anything, "user-123").Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/me", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/me", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body MeResponse
@@ -130,7 +130,7 @@ func TestHandler_GetProfile(t *testing.T) {
 		svc.On("Me", mock.Anything, "ghost").Return((*MeResponse)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "ghost")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/me", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/me", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
@@ -140,7 +140,7 @@ func TestHandler_GetProfile(t *testing.T) {
 		svc.On("Me", mock.Anything, "user-123").Return((*MeResponse)(nil), errors.New("db down"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/me", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/me", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -156,7 +156,7 @@ func TestHandler_UpdateProfile(t *testing.T) {
 		svc.On("UpdateProfile", mock.Anything, "user-123", mock.AnythingOfType("*user.UpdateProfileRequest")).Return(res, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me", req)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me", req) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
@@ -179,7 +179,7 @@ func TestHandler_UpdateProfile(t *testing.T) {
 		svc.On("UpdateProfile", mock.Anything, "user-123", mock.Anything).Return((*UpdateProfileResponse)(nil), ErrUserNotUpdated)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me", map[string]string{})
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me", map[string]string{}) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
@@ -189,7 +189,7 @@ func TestHandler_UpdateProfile(t *testing.T) {
 		svc.On("UpdateProfile", mock.Anything, "user-123", mock.Anything).Return((*UpdateProfileResponse)(nil), errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me", map[string]string{"name": "Jane"})
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me", map[string]string{"name": "Jane"}) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -205,7 +205,7 @@ func TestHandler_UpdateEmail(t *testing.T) {
 		svc.On("UpdateEmail", mock.Anything, "user-123", mock.AnythingOfType("*user.UpdateEmailRequest")).Return(res, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/email", req)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/email", req) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
@@ -215,7 +215,7 @@ func TestHandler_UpdateEmail(t *testing.T) {
 		svc.On("UpdateEmail", mock.Anything, "user-123", mock.Anything).Return((*UpdateEmailResponse)(nil), ErrInvalidPassword)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/email", map[string]string{
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/email", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"new_email":        "newemail@example.com",
 			"current_password": "wrong",
 		})
@@ -231,7 +231,7 @@ func TestHandler_UpdateEmail(t *testing.T) {
 		)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/email", map[string]string{
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/email", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"new_email":        "x@example.com",
 			"current_password": "secret",
 		})
@@ -254,7 +254,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 		svc.On("ChangePassword", mock.Anything, "user-123", mock.AnythingOfType("*user.ChangePasswordRequest")).Return(nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body map[string]string
@@ -267,7 +267,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(ErrInvalidPassword)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
@@ -277,7 +277,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(ErrPasswordMismatch)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
@@ -287,7 +287,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(apperr.ErrNotFound)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
@@ -297,7 +297,7 @@ func TestHandler_ChangePassword(t *testing.T) {
 		svc.On("ChangePassword", mock.Anything, "user-123", mock.Anything).Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq)
+		resp := doRequest(t, app, http.MethodPatch, "/v1/users/me/password", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -324,7 +324,7 @@ func TestHandler_DeleteAccount(t *testing.T) {
 		svc.On("DeleteAccount", mock.Anything, "user-123").Return(nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodDelete, "/v1/users/me", nil)
+		resp := doRequest(t, app, http.MethodDelete, "/v1/users/me", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 	})
@@ -334,7 +334,7 @@ func TestHandler_DeleteAccount(t *testing.T) {
 		svc.On("DeleteAccount", mock.Anything, "user-123").Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodDelete, "/v1/users/me", nil)
+		resp := doRequest(t, app, http.MethodDelete, "/v1/users/me", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -344,7 +344,7 @@ func TestHandler_DeleteAccount(t *testing.T) {
 		svc.On("DeleteAccount", mock.Anything, "context-user").Return(nil)
 
 		app := newTestApp(svc, "context-user")
-		resp := doRequest(t, app, http.MethodDelete, "/v1/users/me", map[string]string{
+		resp := doRequest(t, app, http.MethodDelete, "/v1/users/me", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"user_id": "attacker-trying-to-override",
 		})
 
@@ -365,7 +365,7 @@ func TestHandler_Search(t *testing.T) {
 		svc.On("Search", mock.Anything, "user-123", mock.AnythingOfType("*user.SearchQuery")).Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=xena&limit=10", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=xena&limit=10", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body SearchResponse
@@ -384,7 +384,7 @@ func TestHandler_Search(t *testing.T) {
 		svc.On("Search", mock.Anything, "user-123", mock.AnythingOfType("*user.SearchQuery")).Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=b&limit=2", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=b&limit=2", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body SearchResponse
@@ -398,7 +398,7 @@ func TestHandler_Search(t *testing.T) {
 		svc.On("Search", mock.Anything, "user-123", mock.Anything).Return(&SearchResponse{Data: []*Summary{}}, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=nobody", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=nobody", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
@@ -408,7 +408,7 @@ func TestHandler_Search(t *testing.T) {
 		svc.On("Search", mock.Anything, "user-123", mock.Anything).Return((*SearchResponse)(nil), errors.New("db timeout"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=x", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=x", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -420,7 +420,7 @@ func TestHandler_Search(t *testing.T) {
 		})).Return(&SearchResponse{Data: []*Summary{}}, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=john&limit=10", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/search?q=john&limit=10", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		svc.AssertExpectations(t)
@@ -443,7 +443,7 @@ func TestHandler_FindByID(t *testing.T) {
 		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: u.ID}).Return(expected, nil)
 
 		app := newTestApp(svc, "caller-id")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/"+u.ID, nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/"+u.ID, nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body Response
@@ -456,7 +456,7 @@ func TestHandler_FindByID(t *testing.T) {
 		svc.On("FindUserByID", mock.Anything, "caller-id", &GetUserURI{ID: "ghost"}).Return((*Response)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "caller-id")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/ghost", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/ghost", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 		var body map[string]string
@@ -469,7 +469,7 @@ func TestHandler_FindByID(t *testing.T) {
 		svc.On("FindUserByID", mock.Anything, "caller-id", mock.Anything).Return((*Response)(nil), apperr.ErrNotFound)
 
 		app := newTestApp(svc, "caller-id")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/blocker-id", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/blocker-id", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
@@ -482,7 +482,7 @@ func TestHandler_FindByID(t *testing.T) {
 		)
 
 		app := newTestApp(svc, "caller-id")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/some-id", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/some-id", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 		var body map[string]string
@@ -500,7 +500,7 @@ func TestHandler_FindByID(t *testing.T) {
 		svc.On("FindUserByID", mock.Anything, mock.Anything, mock.Anything).Return(expected, nil)
 
 		app := newTestApp(svc, "caller-id")
-		resp := doRequest(t, app, http.MethodGet, "/v1/users/user-123", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/users/user-123", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		var rawBody map[string]any
 		decodeJSON(t, resp, &rawBody)

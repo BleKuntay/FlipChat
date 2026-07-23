@@ -161,7 +161,7 @@ func TestHandler_SendMessage(t *testing.T) {
 			if tt.setupSvc != nil {
 				tt.setupSvc(svc)
 			}
-			resp := doRequest(t, newTestApp(svc), http.MethodPost, url, tt.body)
+			resp := doRequest(t, newTestApp(svc), http.MethodPost, url, tt.body) //nolint:bodyclose // body closed via t.Cleanup in helper
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 			if resp.StatusCode >= 400 {
 				var body map[string]any
@@ -218,7 +218,7 @@ func TestHandler_ListMessages(t *testing.T) {
 			if tt.setupSvc != nil {
 				tt.setupSvc(svc)
 			}
-			resp := doRequest(t, newTestApp(svc), http.MethodGet, url+tt.query, nil)
+			resp := doRequest(t, newTestApp(svc), http.MethodGet, url+tt.query, nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 			if resp.StatusCode >= 400 {
 				var body map[string]any
@@ -284,7 +284,7 @@ func TestHandler_EditMessage(t *testing.T) {
 			if tt.setupSvc != nil {
 				tt.setupSvc(svc)
 			}
-			resp := doRequest(t, newTestApp(svc), http.MethodPatch, url, tt.body)
+			resp := doRequest(t, newTestApp(svc), http.MethodPatch, url, tt.body) //nolint:bodyclose // body closed via t.Cleanup in helper
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 			if resp.StatusCode >= 400 {
 				var body map[string]any
@@ -353,7 +353,7 @@ func TestHandler_DeleteMessage(t *testing.T) {
 			if tt.setupSvc != nil {
 				tt.setupSvc(svc)
 			}
-			resp := doRequest(t, newTestApp(svc), http.MethodDelete, url, nil)
+			resp := doRequest(t, newTestApp(svc), http.MethodDelete, url, nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 			if resp.StatusCode >= 400 {
 				var body map[string]any
@@ -385,7 +385,7 @@ func TestHandler_SendMessage_WithAttachmentID_Returns201(t *testing.T) {
 		return &Response{ID: "msg-1", ConversationID: handlerConvoID, SenderID: handlerUserID}, nil
 	}
 
-	resp := doRequest(t, newTestApp(svc), http.MethodPost, url, body)
+	resp := doRequest(t, newTestApp(svc), http.MethodPost, url, body) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 }
@@ -400,7 +400,7 @@ func TestHandler_SendMessage_NoContentNoAttachment_Returns400(t *testing.T) {
 		return nil, apperr.ErrBadRequest
 	}
 
-	resp := doRequest(t, newTestApp(svc), http.MethodPost, url, body)
+	resp := doRequest(t, newTestApp(svc), http.MethodPost, url, body) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	var respBody map[string]any

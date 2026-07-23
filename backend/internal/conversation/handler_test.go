@@ -96,7 +96,7 @@ func TestHandler_GetConversationList(t *testing.T) {
 		svc.On("GetConversationList", mock.Anything, "user-123").Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body ListResponse
@@ -110,7 +110,7 @@ func TestHandler_GetConversationList(t *testing.T) {
 		svc.On("GetConversationList", mock.Anything, "user-123").Return(&ListResponse{Data: []Response{}}, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body ListResponse
@@ -123,7 +123,7 @@ func TestHandler_GetConversationList(t *testing.T) {
 		svc.On("GetConversationList", mock.Anything, "user-123").Return(nil, errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -133,7 +133,7 @@ func TestHandler_GetConversationList(t *testing.T) {
 		svc.On("GetConversationList", mock.Anything, "context-user").Return(&ListResponse{Data: []Response{}}, nil)
 
 		app := newTestApp(svc, "context-user")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		svc.AssertCalled(t, "GetConversationList", mock.Anything, "context-user")
@@ -149,7 +149,7 @@ func TestHandler_GetConversation(t *testing.T) {
 		svc.On("GetConversation", mock.Anything, "user-123", "conv-1").Return(expected, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/conv-1", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/conv-1", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body Response
@@ -164,7 +164,7 @@ func TestHandler_GetConversation(t *testing.T) {
 		svc.On("GetConversation", mock.Anything, "outsider", "conv-1").Return(nil, apperr.ErrNotFound)
 
 		app := newTestApp(svc, "outsider")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/conv-1", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/conv-1", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
@@ -174,7 +174,7 @@ func TestHandler_GetConversation(t *testing.T) {
 		svc.On("GetConversation", mock.Anything, "user-123", "conv-1").Return(nil, errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/conv-1", nil)
+		resp := doRequest(t, app, http.MethodGet, "/v1/conversations/conv-1", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -189,7 +189,7 @@ func TestHandler_CreateConversation(t *testing.T) {
 		svc.On("CreateConversation", mock.Anything, "user-123", "target-456").Return(expected, true, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"target_user_id": "target-456",
 		})
 
@@ -206,7 +206,7 @@ func TestHandler_CreateConversation(t *testing.T) {
 		svc.On("CreateConversation", mock.Anything, "user-123", "target-456").Return(expected, false, nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"target_user_id": "target-456",
 		})
 
@@ -234,7 +234,7 @@ func TestHandler_CreateConversation(t *testing.T) {
 		svc.On("CreateConversation", mock.Anything, "user-123", "user-123").Return(nil, false, apperr.ErrBadRequest)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"target_user_id": "user-123",
 		})
 
@@ -246,7 +246,7 @@ func TestHandler_CreateConversation(t *testing.T) {
 		svc.On("CreateConversation", mock.Anything, "user-123", "blocker-id").Return(nil, false, apperr.ErrNotFound)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"target_user_id": "blocker-id",
 		})
 
@@ -259,7 +259,7 @@ func TestHandler_CreateConversation(t *testing.T) {
 		svc.On("CreateConversation", mock.Anything, "user-123", "target-456").Return(nil, false, errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"target_user_id": "target-456",
 		})
 
@@ -272,7 +272,7 @@ func TestHandler_CreateConversation(t *testing.T) {
 		svc.On("CreateConversation", mock.Anything, "context-user", "target-456").Return(expected, true, nil)
 
 		app := newTestApp(svc, "context-user")
-		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/conversations/", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"target_user_id": "target-456",
 		})
 

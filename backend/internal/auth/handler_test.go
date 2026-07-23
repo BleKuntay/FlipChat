@@ -135,7 +135,7 @@ func TestHandler_Register(t *testing.T) {
 			Return(stubAuthResponse(), "refresh-token-value", nil)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -175,7 +175,7 @@ func TestHandler_Register(t *testing.T) {
 			Return((*Response)(nil), "", shared.ErrPasswordWeak)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
@@ -186,7 +186,7 @@ func TestHandler_Register(t *testing.T) {
 			Return((*Response)(nil), "", ErrEmailAlreadyInUse)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusConflict, resp.StatusCode)
 		var body map[string]string
@@ -200,7 +200,7 @@ func TestHandler_Register(t *testing.T) {
 			Return((*Response)(nil), "", ErrUsernameAlreadyTaken)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusConflict, resp.StatusCode)
 		var body map[string]string
@@ -214,7 +214,7 @@ func TestHandler_Register(t *testing.T) {
 			Return((*Response)(nil), "", errors.New("unexpected db error"))
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 		var body map[string]string
@@ -228,7 +228,7 @@ func TestHandler_Register(t *testing.T) {
 			Return(stubAuthResponse(), "refresh-token-value", nil)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/register", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		var rawBody map[string]any
 		decodeJSON(t, resp, &rawBody)
@@ -251,7 +251,7 @@ func TestHandler_Login(t *testing.T) {
 			Return(stubAuthResponse(), "refresh-token-value", nil)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/login", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/login", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -290,7 +290,7 @@ func TestHandler_Login(t *testing.T) {
 			Return((*Response)(nil), "", ErrInvalidCredentials)
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/login", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/login", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		var body map[string]string
@@ -304,7 +304,7 @@ func TestHandler_Login(t *testing.T) {
 			Return((*Response)(nil), "", errors.New("db down"))
 
 		app := newTestApp(svc, "")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/login", validReq)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/login", validReq) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 		var body map[string]string
@@ -321,7 +321,7 @@ func TestHandler_Logout(t *testing.T) {
 		svc.On("Logout", mock.Anything, "valid-refresh-token").Return(nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/logout", nil, "refresh_token", "valid-refresh-token")
+		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/logout", nil, "refresh_token", "valid-refresh-token") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body map[string]string
@@ -341,7 +341,7 @@ func TestHandler_Logout(t *testing.T) {
 		svc := new(mockService)
 		app := newTestApp(svc, "user-123")
 
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout", nil)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		svc.AssertNotCalled(t, "Logout")
@@ -352,7 +352,7 @@ func TestHandler_Logout(t *testing.T) {
 		svc.On("Logout", mock.Anything, "some-token").Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/logout", nil, "refresh_token", "some-token")
+		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/logout", nil, "refresh_token", "some-token") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
@@ -366,7 +366,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 		svc.On("LogoutAll", mock.Anything, "user-123").Return(nil)
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout-all", nil)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout-all", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 		svc.AssertExpectations(t)
@@ -377,7 +377,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 		svc.On("LogoutAll", mock.Anything, "user-123").Return(errors.New("db error"))
 
 		app := newTestApp(svc, "user-123")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout-all", nil)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout-all", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
@@ -387,7 +387,7 @@ func TestHandler_LogoutAll(t *testing.T) {
 		svc.On("LogoutAll", mock.Anything, "context-user").Return(nil)
 
 		app := newTestApp(svc, "context-user")
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout-all", map[string]string{
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/logout-all", map[string]string{ //nolint:bodyclose // body closed via t.Cleanup in helper
 			"user_id": "attacker-trying-to-override",
 		})
 
@@ -405,7 +405,7 @@ func TestHandler_Refresh(t *testing.T) {
 			Return("new-access-token", "new-refresh-token", nil)
 
 		app := newTestApp(svc, "")
-		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "valid-refresh-token")
+		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "valid-refresh-token") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		var body map[string]string
@@ -428,7 +428,7 @@ func TestHandler_Refresh(t *testing.T) {
 		svc := new(mockService)
 		app := newTestApp(svc, "")
 
-		resp := doRequest(t, app, http.MethodPost, "/v1/auth/refresh", nil)
+		resp := doRequest(t, app, http.MethodPost, "/v1/auth/refresh", nil) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		svc.AssertNotCalled(t, "Refresh")
@@ -440,7 +440,7 @@ func TestHandler_Refresh(t *testing.T) {
 			Return("", "", pkgjwt.ErrInvalidToken)
 
 		app := newTestApp(svc, "")
-		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "bad-token")
+		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "bad-token") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
@@ -451,7 +451,7 @@ func TestHandler_Refresh(t *testing.T) {
 			Return("", "", pkgjwt.ErrRefreshTokenExpired)
 
 		app := newTestApp(svc, "")
-		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "expired-token")
+		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "expired-token") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
@@ -462,7 +462,7 @@ func TestHandler_Refresh(t *testing.T) {
 			Return("", "", errors.New("db down"))
 
 		app := newTestApp(svc, "")
-		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "some-token")
+		resp := doRequestWithCookie(t, app, http.MethodPost, "/v1/auth/refresh", nil, "refresh_token", "some-token") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 		var body map[string]string
