@@ -80,11 +80,9 @@ func TestHandler_Upload_ValidFile_Returns201(t *testing.T) {
 	fileContent := bytes.Repeat([]byte("x"), 100)
 	uploadResp := &attachment.UploadResponse{
 		AttachmentID: "att-abc",
-		ObjectKey:    "attachments/att-abc",
 		Filename:     "photo.jpg",
 		MIMEType:     "image/jpeg",
 		Size:         int64(len(fileContent)),
-		UploaderID:   handlerUserID,
 	}
 
 	svc.On("Upload", mock.Anything, handlerUserID, "photo.jpg", int64(len(fileContent)), mock.Anything).
@@ -181,11 +179,9 @@ func TestHandler_Upload_UserIDFromAuthContext(t *testing.T) {
 	fileContent := []byte("content")
 	uploadResp := &attachment.UploadResponse{
 		AttachmentID: "att-123",
-		ObjectKey:    "attachments/att-123",
 		Filename:     "photo.jpg",
 		MIMEType:     "image/jpeg",
 		Size:         int64(len(fileContent)),
-		UploaderID:   handlerUserID,
 	}
 
 	svc.On("Upload", mock.Anything, handlerUserID, mock.Anything, mock.Anything, mock.Anything).
@@ -212,11 +208,9 @@ func TestHandler_Download_Success_Returns200(t *testing.T) {
 
 	metadata := &attachment.Metadata{
 		AttachmentID: attachmentID,
-		ObjectKey:    "attachments/att-abc",
 		Filename:     "photo.jpg",
 		MIMEType:     "image/jpeg",
 		Size:         int64(len(imageData)),
-		UploaderID:   "user-other",
 	}
 
 	svc.On("Download", mock.Anything, handlerUserID, attachmentID).
@@ -237,11 +231,9 @@ func TestHandler_Download_ContentTypeHeader(t *testing.T) {
 	const attachmentID = "att-abc"
 	metadata := &attachment.Metadata{
 		AttachmentID: attachmentID,
-		ObjectKey:    "attachments/att-abc",
 		Filename:     "image.webp",
 		MIMEType:     "image/webp",
 		Size:         100,
-		UploaderID:   "user-other",
 	}
 
 	svc.On("Download", mock.Anything, handlerUserID, attachmentID).
@@ -265,11 +257,9 @@ func TestHandler_Download_ContentDispositionHeader(t *testing.T) {
 	)
 	metadata := &attachment.Metadata{
 		AttachmentID: attachmentID,
-		ObjectKey:    "attachments/att-abc",
 		Filename:     filename,
 		MIMEType:     "image/jpeg",
 		Size:         100,
-		UploaderID:   "user-other",
 	}
 
 	svc.On("Download", mock.Anything, handlerUserID, attachmentID).
@@ -291,11 +281,9 @@ func TestHandler_Download_ContentLengthHeader(t *testing.T) {
 	imageData := bytes.Repeat([]byte("x"), 12345)
 	metadata := &attachment.Metadata{
 		AttachmentID: attachmentID,
-		ObjectKey:    "attachments/att-abc",
 		Filename:     "image.png",
 		MIMEType:     "image/png",
 		Size:         int64(len(imageData)),
-		UploaderID:   "user-other",
 	}
 
 	svc.On("Download", mock.Anything, handlerUserID, attachmentID).
@@ -320,7 +308,6 @@ func TestHandler_Download_AttachmentIDFromPathParam(t *testing.T) {
 		Filename:     "image.jpg",
 		MIMEType:     "image/jpeg",
 		Size:         100,
-		UploaderID:   "user-other",
 	}
 
 	svc.On("Download", mock.Anything, handlerUserID, attachmentID).

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BleKuntay/FlipChat/backend/internal/attachment"
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/google/uuid"
 )
@@ -43,6 +44,12 @@ type ObjectDeleter interface {
 	DeleteObject(ctx context.Context, objectKey string) error
 }
 
+// AttachmentStore atomically fetches and deletes a temporary upload record.
+// Returns apperr.ErrNotFound if the record does not exist or has expired.
+type AttachmentStore interface {
+	PopUploadRecord(ctx context.Context, attachmentID string) (*attachment.UploadRecord, error)
+}
+
 type Option func(*Service)
 
 func WithIDGen(fn func() string) Option {
@@ -53,12 +60,17 @@ func WithClock(fn func() time.Time) Option {
 	return func(s *Service) { s.clock = fn }
 }
 
+func WithAttachmentStore(store AttachmentStore) Option {
+	return func(s *Service) { s.attachments = store }
+}
+
 type Service struct {
 	repository        RepositoryInterface
 	conversationStore ConversationStore
 	blockChecker      BlockChecker
 	publisher         EventPublisher
 	objects           ObjectDeleter
+	attachments       AttachmentStore
 	idGen             func() string
 	clock             func() time.Time
 }
@@ -156,13 +168,29 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 
 	var rawMetadata *json.RawMessage
 	if hasAttachment {
+		if s.attachments == nil {
+			return nil, apperr.ErrBadRequest
+		}
+
+		record, err := s.attachments.PopUploadRecord(ctx, *request.AttachmentID)
+		if err != nil {
+			return nil, err
+		}
+		if record.UploaderID != userID {
+			logger.Warn("message: attachment ownership mismatch",
+				zap.String("sender_id", userID),
+				zap.String("uploader_id", record.UploaderID),
+				zap.String("attachment_id", *request.AttachmentID),
+			)
+			return nil, apperr.ErrForbidden
+		}
+
 		meta := map[string]any{
 			"attachment_id": *request.AttachmentID,
-			"object_key":    "attachments/" + *request.AttachmentID,
-			"filename":      derefString(request.Filename),
-			"mime_type":     derefString(request.MIMEType),
-			"size":          derefInt64(request.Size),
-			"uploader_id":   userID,
+			"object_key":    record.ObjectKey,
+			"filename":      record.Filename,
+			"mime_type":     record.MIMEType,
+			"size":          record.Size,
 		}
 
 		b, err := json.Marshal(meta)
@@ -401,20 +429,6 @@ func toResponse(m *Message) *Response {
 		UpdatedAt:      m.UpdatedAt,
 		ReadAt:         m.ReadAt,
 	}
-}
-
-func derefString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func derefInt64(n *int64) int64 {
-	if n == nil {
-		return 0
-	}
-	return *n
 }
 
 func (s *Service) deleteAttachmentObject(ctx context.Context, messageID string, raw *json.RawMessage) error {

@@ -34,9 +34,8 @@ type SendRequest struct {
 	Content      string  `json:"content"`
 	ReplyToID    *string `json:"reply_to_id"`
 	AttachmentID *string `json:"attachment_id"`
-	Filename     *string `json:"filename"`
-	MIMEType     *string `json:"mime_type"`
-	Size         *int64  `json:"size"`
+	// Filename, MIMEType, Size intentionally absent — metadata is read from
+	// the server-side upload record, never trusted from the client.
 }
 
 type EditRequest struct {

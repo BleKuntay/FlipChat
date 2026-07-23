@@ -369,12 +369,8 @@ func TestHandler_DeleteMessage(t *testing.T) {
 func TestHandler_SendMessage_WithAttachmentID_Returns201(t *testing.T) {
 	url := "/conversations/" + handlerConvoID + "/messages"
 
-	size := int64(1024)
 	body, _ := json.Marshal(SendRequest{
 		AttachmentID: strPtr("att-abc"),
-		Filename:     strPtr("photo.jpg"),
-		MIMEType:     strPtr("image/jpeg"),
-		Size:         &size,
 	})
 
 	svc := &mockHandlerService{}

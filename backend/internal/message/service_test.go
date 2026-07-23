@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BleKuntay/FlipChat/backend/internal/attachment"
 	"github.com/BleKuntay/FlipChat/backend/internal/message"
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/stretchr/testify/assert"
@@ -73,12 +74,28 @@ func (m *mockObjectDeleter) DeleteObject(ctx context.Context, objectKey string) 
 	return m.Called(ctx, objectKey).Error(0)
 }
 
+type mockAttachmentStore struct{ mock.Mock }
+
+func (m *mockAttachmentStore) PopUploadRecord(ctx context.Context, attachmentID string) (*attachment.UploadRecord, error) {
+	args := m.Called(ctx, attachmentID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*attachment.UploadRecord), args.Error(1)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func newTestService(repo *mockRepo, convs *mockConvStore, blks *mockBlockChecker, opts ...message.Option) *message.Service {
 	publisher := new(mockPublisher)
 	publisher.On("FanOutToConversation", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 	return message.NewService(repo, convs, blks, publisher, opts...)
+}
+
+func newTestServiceWithAttachments(repo *mockRepo, convs *mockConvStore, blks *mockBlockChecker, atts *mockAttachmentStore, opts ...message.Option) *message.Service {
+	publisher := new(mockPublisher)
+	publisher.On("FanOutToConversation", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
+	return message.NewService(repo, convs, blks, publisher, append(opts, message.WithAttachmentStore(atts))...)
 }
 
 func strPtr(s string) *string { return &s }
@@ -108,7 +125,6 @@ func makeRawMetadata(objectKey string) *json.RawMessage {
 		"filename":      "photo.jpg",
 		"mime_type":     "image/jpeg",
 		"size":          int64(1024),
-		"uploader_id":   "user-high",
 	})
 	raw := json.RawMessage(b)
 	return &raw
@@ -518,14 +534,22 @@ func TestService_DeleteMessage_AlreadyDeleted_ReturnsConflict(t *testing.T) {
 func TestService_SendMessage_AttachmentOnly_NoContent(t *testing.T) {
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+	atts := new(mockAttachmentStore)
 
 	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
 	blks.On("IsBlockedEitherWay", ctx, "user-high", "user-low").Return(false, nil)
+	atts.On("PopUploadRecord", ctx, "att-abc").Return(&attachment.UploadRecord{
+		UploaderID: "user-high",
+		ObjectKey:  "attachments/att-abc",
+		MIMEType:   "image/jpeg",
+		Filename:   "photo.jpg",
+		Size:       1024,
+	}, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
 		return m.Content == nil && m.Metadata != nil
 	})).Return(nil)
 
-	svc := newTestService(repo, convs, blks)
+	svc := newTestServiceWithAttachments(repo, convs, blks, atts)
 
 	resp, err := svc.SendMessage(ctx, "user-high", "conv-1", message.SendRequest{
 		AttachmentID: strPtr("att-abc"),
@@ -535,19 +559,28 @@ func TestService_SendMessage_AttachmentOnly_NoContent(t *testing.T) {
 	assert.Nil(t, resp.Content)
 	assert.NotNil(t, resp.Metadata)
 	repo.AssertExpectations(t)
+	atts.AssertExpectations(t)
 }
 
 func TestService_SendMessage_ContentAndAttachment(t *testing.T) {
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+	atts := new(mockAttachmentStore)
 
 	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
 	blks.On("IsBlockedEitherWay", ctx, "user-high", "user-low").Return(false, nil)
+	atts.On("PopUploadRecord", ctx, "att-abc").Return(&attachment.UploadRecord{
+		UploaderID: "user-high",
+		ObjectKey:  "attachments/att-abc",
+		MIMEType:   "image/jpeg",
+		Filename:   "photo.jpg",
+		Size:       1024,
+	}, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
 		return m.Content != nil && *m.Content == "check this out" && m.Metadata != nil
 	})).Return(nil)
 
-	svc := newTestService(repo, convs, blks)
+	svc := newTestServiceWithAttachments(repo, convs, blks, atts)
 
 	resp, err := svc.SendMessage(ctx, "user-high", "conv-1", message.SendRequest{
 		Content:      "check this out",
@@ -558,6 +591,7 @@ func TestService_SendMessage_ContentAndAttachment(t *testing.T) {
 	assert.Equal(t, "check this out", *resp.Content)
 	assert.NotNil(t, resp.Metadata)
 	repo.AssertExpectations(t)
+	atts.AssertExpectations(t)
 }
 
 func TestService_SendMessage_NoContentNoAttachment_ReturnsBadRequest(t *testing.T) {
@@ -579,14 +613,22 @@ func TestService_SendMessage_NoContentNoAttachment_ReturnsBadRequest(t *testing.
 func TestService_SendMessage_WhitespaceContentWithAttachment_ContentNil(t *testing.T) {
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+	atts := new(mockAttachmentStore)
 
 	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
 	blks.On("IsBlockedEitherWay", ctx, "user-high", "user-low").Return(false, nil)
+	atts.On("PopUploadRecord", ctx, "att-123").Return(&attachment.UploadRecord{
+		UploaderID: "user-high",
+		ObjectKey:  "attachments/att-123",
+		MIMEType:   "image/jpeg",
+		Filename:   "photo.jpg",
+		Size:       1024,
+	}, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
 		return m.Content == nil && m.Metadata != nil
 	})).Return(nil)
 
-	svc := newTestService(repo, convs, blks)
+	svc := newTestServiceWithAttachments(repo, convs, blks, atts)
 
 	resp, err := svc.SendMessage(ctx, "user-high", "conv-1", message.SendRequest{
 		Content:      "   ",
@@ -597,21 +639,31 @@ func TestService_SendMessage_WhitespaceContentWithAttachment_ContentNil(t *testi
 	assert.Nil(t, resp.Content)
 	assert.NotNil(t, resp.Metadata)
 	repo.AssertExpectations(t)
+	atts.AssertExpectations(t)
 }
 
 func TestService_SendMessage_AttachmentMetadata_FieldsCorrect(t *testing.T) {
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+	atts := new(mockAttachmentStore)
 
 	const (
-		senderID = "user-high"
-		otherID  = "user-low"
-		convoID  = "conv-1"
-		attID    = "att-xyz"
+		senderID  = "user-high"
+		otherID   = "user-low"
+		convoID   = "conv-1"
+		attID     = "att-xyz"
+		objectKey = "attachments/att-xyz"
 	)
 
 	convs.On("GetParticipants", ctx, convoID).Return(otherID, senderID, nil)
 	blks.On("IsBlockedEitherWay", ctx, senderID, otherID).Return(false, nil)
+	atts.On("PopUploadRecord", ctx, attID).Return(&attachment.UploadRecord{
+		UploaderID: senderID,
+		ObjectKey:  objectKey,
+		MIMEType:   "image/jpeg",
+		Filename:   "photo.jpg",
+		Size:       2048,
+	}, nil)
 	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
 		if m.Metadata == nil {
 			return false
@@ -620,56 +672,74 @@ func TestService_SendMessage_AttachmentMetadata_FieldsCorrect(t *testing.T) {
 		if err := json.Unmarshal(*m.Metadata, &meta); err != nil {
 			return false
 		}
+		// Metadata must come from the upload record, not from the client request.
 		return meta["attachment_id"] == attID &&
-			meta["object_key"] == "attachments/"+attID &&
+			meta["object_key"] == objectKey &&
 			meta["filename"] == "photo.jpg" &&
 			meta["mime_type"] == "image/jpeg" &&
-			meta["uploader_id"] == senderID
+			meta["size"] == float64(2048)
 	})).Return(nil)
 
-	svc := newTestService(repo, convs, blks)
+	svc := newTestServiceWithAttachments(repo, convs, blks, atts)
 
 	resp, err := svc.SendMessage(ctx, senderID, convoID, message.SendRequest{
 		AttachmentID: strPtr(attID),
-		Filename:     strPtr("photo.jpg"),
-		MIMEType:     strPtr("image/jpeg"),
-		Size:         int64Ptr(2048),
 	})
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp.Metadata)
 	repo.AssertExpectations(t)
+	atts.AssertExpectations(t)
 }
 
-func TestService_SendMessage_AttachmentNilOptionalFields_NoNilPanic(t *testing.T) {
+func TestService_SendMessage_AttachmentWrongUploader_ReturnsForbidden(t *testing.T) {
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+	atts := new(mockAttachmentStore)
 
 	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
 	blks.On("IsBlockedEitherWay", ctx, "user-high", "user-low").Return(false, nil)
-	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
-		if m.Metadata == nil {
-			return false
-		}
-		var meta map[string]any
-		if err := json.Unmarshal(*m.Metadata, &meta); err != nil {
-			return false
-		}
+	// Attachment was uploaded by a different user
+	atts.On("PopUploadRecord", ctx, "att-xyz").Return(&attachment.UploadRecord{
+		UploaderID: "user-other",
+		ObjectKey:  "attachments/att-xyz",
+		MIMEType:   "image/jpeg",
+		Filename:   "photo.jpg",
+		Size:       1024,
+	}, nil)
 
-		return meta["filename"] == "" &&
-			meta["mime_type"] == "" &&
-			meta["size"] == float64(0)
-	})).Return(nil)
-
-	svc := newTestService(repo, convs, blks)
+	svc := newTestServiceWithAttachments(repo, convs, blks, atts)
 
 	resp, err := svc.SendMessage(ctx, "user-high", "conv-1", message.SendRequest{
 		AttachmentID: strPtr("att-xyz"),
 	})
 
-	require.NoError(t, err)
-	assert.NotNil(t, resp)
-	repo.AssertExpectations(t)
+	assert.ErrorIs(t, err, apperr.ErrForbidden)
+	assert.Nil(t, resp)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	atts.AssertExpectations(t)
+}
+
+func TestService_SendMessage_AttachmentExpired_ReturnsNotFound(t *testing.T) {
+	ctx := context.Background()
+	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+	atts := new(mockAttachmentStore)
+
+	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
+	blks.On("IsBlockedEitherWay", ctx, "user-high", "user-low").Return(false, nil)
+	// Upload record expired (TTL elapsed)
+	atts.On("PopUploadRecord", ctx, "att-expired").Return(nil, apperr.ErrNotFound)
+
+	svc := newTestServiceWithAttachments(repo, convs, blks, atts)
+
+	resp, err := svc.SendMessage(ctx, "user-high", "conv-1", message.SendRequest{
+		AttachmentID: strPtr("att-expired"),
+	})
+
+	assert.ErrorIs(t, err, apperr.ErrNotFound)
+	assert.Nil(t, resp)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	atts.AssertExpectations(t)
 }
 
 func TestService_SendMessage_ReplyToDeletedMessage_Succeeds(t *testing.T) {

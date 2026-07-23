@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"time"
+
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"io"
-	"time"
 )
 
 // ObjectStore abstracts MinIO operations.
@@ -31,13 +32,15 @@ type ConversationStore interface {
 
 type Service struct {
 	objects       ObjectStore
+	uploads       UploadStore
 	messages      MessageStore
 	conversations ConversationStore
 }
 
-func NewService(objects ObjectStore, messages MessageStore, conversations ConversationStore) *Service {
+func NewService(objects ObjectStore, uploads UploadStore, messages MessageStore, conversations ConversationStore) *Service {
 	return &Service{
 		objects:       objects,
+		uploads:       uploads,
 		messages:      messages,
 		conversations: conversations,
 	}
@@ -51,6 +54,9 @@ func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size 
 		)
 
 		return nil, apperr.ErrFileTooLarge
+	}
+	if size < MinFileSize {
+		return nil, apperr.ErrBadRequest
 	}
 
 	header, err := ReadHeader(reader)
@@ -81,50 +87,56 @@ func (s *Service) Upload(ctx context.Context, uploaderID, filename string, size 
 		return nil, err
 	}
 
-	response := &UploadResponse{
-		AttachmentID: attachmentID,
-		ObjectKey:    objectKey,
-		Filename:     filename,
-		MIMEType:     mimeType,
-		Size:         size,
-		UploaderID:   uploaderID,
+	record := UploadRecord{
+		UploaderID: uploaderID,
+		ObjectKey:  objectKey,
+		MIMEType:   mimeType,
+		Filename:   filename,
+		Size:       size,
+	}
+
+	if err := s.uploads.SaveUploadRecord(ctx, attachmentID, record); err != nil {
+		// Object is already in MinIO. Log and continue — the orphan will be
+		// cleaned up by TTL expiry. Do not fail the upload over a Redis write.
+		logger.Error("attachment: failed to save upload record",
+			zap.String("attachment_id", attachmentID),
+			zap.Error(err),
+		)
 	}
 
 	logger.Info("attachment: uploaded",
-		zap.String("attachment_id", response.AttachmentID),
-		zap.String("uploader_id", response.UploaderID),
-		zap.String("mime_type", response.MIMEType),
-		zap.Int64("size", response.Size),
+		zap.String("attachment_id", attachmentID),
+		zap.String("uploader_id", uploaderID),
+		zap.String("mime_type", mimeType),
+		zap.Int64("size", size),
 	)
 
-	return response, nil
+	return &UploadResponse{
+		AttachmentID: attachmentID,
+		Filename:     filename,
+		MIMEType:     mimeType,
+		Size:         size,
+	}, nil
 }
 
 func (s *Service) Download(ctx context.Context, requesterID, attachmentID string) (io.ReadCloser, *Metadata, error) {
-	ref, metadata, deletedAt, err := s.messages.FindByAttachmentID(ctx, attachmentID)
+	conversationID, metadata, deletedAt, err := s.messages.FindByAttachmentID(ctx, attachmentID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if ref == "" || metadata == nil {
+	if conversationID == "" || metadata == nil {
 		return nil, nil, apperr.ErrNotFound
 	}
 	if deletedAt != nil {
 		return nil, nil, apperr.ErrNotFound
 	}
 
-	attachmentMetadata := &Metadata{
-		AttachmentID: getString(metadata, "attachment_id"),
-		ObjectKey:    getString(metadata, "object_key"),
-		Filename:     getString(metadata, "filename"),
-		MIMEType:     getString(metadata, "mime_type"),
-		Size:         getInt64(metadata, "size"),
-		UploaderID:   getString(metadata, "uploader_id"),
-	}
-	if attachmentMetadata.ObjectKey == "" {
+	objectKey := getString(metadata, "object_key")
+	if objectKey == "" {
 		return nil, nil, apperr.ErrNotFound
 	}
 
-	low, high, err := s.conversations.GetParticipants(ctx, ref)
+	low, high, err := s.conversations.GetParticipants(ctx, conversationID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,9 +149,17 @@ func (s *Service) Download(ctx context.Context, requesterID, attachmentID string
 		return nil, nil, apperr.ErrNotFound
 	}
 
-	reader, err := s.objects.GetObject(ctx, attachmentMetadata.ObjectKey)
+	reader, err := s.objects.GetObject(ctx, objectKey)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	attachmentMetadata := &Metadata{
+		AttachmentID: getString(metadata, "attachment_id"),
+		ObjectKey:    objectKey,
+		Filename:     getString(metadata, "filename"),
+		MIMEType:     getString(metadata, "mime_type"),
+		Size:         getInt64(metadata, "size"),
 	}
 
 	return reader, attachmentMetadata, nil

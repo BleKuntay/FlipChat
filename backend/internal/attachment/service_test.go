@@ -82,6 +82,38 @@ func (m *mockMessageStore) AssertExpectations(t mock.TestingT) bool {
 	return m.m.AssertExpectations(t)
 }
 
+type mockUploadStore struct {
+	m *mock.Mock
+}
+
+func newMockUploadStore() *mockUploadStore {
+	return &mockUploadStore{m: new(mock.Mock)}
+}
+
+func (m *mockUploadStore) SaveUploadRecord(ctx context.Context, attachmentID string, record attachment.UploadRecord) error {
+	return m.m.Called(ctx, attachmentID, record).Error(0)
+}
+
+func (m *mockUploadStore) PopUploadRecord(ctx context.Context, attachmentID string) (*attachment.UploadRecord, error) {
+	args := m.m.Called(ctx, attachmentID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*attachment.UploadRecord), args.Error(1)
+}
+
+func (m *mockUploadStore) On(methodName string, arguments ...interface{}) *mock.Call {
+	return m.m.On(methodName, arguments...)
+}
+
+func (m *mockUploadStore) AssertExpectations(t mock.TestingT) bool {
+	return m.m.AssertExpectations(t)
+}
+
+func (m *mockUploadStore) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return m.m.AssertNotCalled(t, methodName, arguments...)
+}
+
 type mockConversationStore struct {
 	m *mock.Mock
 }
@@ -105,8 +137,8 @@ func (m *mockConversationStore) AssertExpectations(t mock.TestingT) bool {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func newTestService(objects *mockObjectStore, messages *mockMessageStore, conversations *mockConversationStore) *attachment.Service {
-	return attachment.NewService(objects, messages, conversations)
+func newTestService(objects *mockObjectStore, uploads *mockUploadStore, messages *mockMessageStore, conversations *mockConversationStore) *attachment.Service {
+	return attachment.NewService(objects, uploads, messages, conversations)
 }
 
 // jpegMagic returns a valid JPEG magic bytes sequence
@@ -154,6 +186,7 @@ func zipMagic() []byte {
 func TestService_Upload_JPEG_Valid(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	magic := jpegMagic()
 	extra := bytes.Repeat([]byte("x"), 100)
@@ -162,22 +195,22 @@ func TestService_Upload_JPEG_Valid(t *testing.T) {
 	objects.On("PutObject", ctx, mock.MatchedBy(func(key string) bool {
 		return len(key) > 0 && key[:12] == "attachments/"
 	}), mock.Anything, int64(103), "image/jpeg").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "photo.jpg", int64(103), reader)
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, "image/jpeg", resp.MIMEType)
-	assert.Equal(t, "user-123", resp.UploaderID)
 	assert.True(t, len(resp.AttachmentID) > 0)
-	assert.Equal(t, "attachments/"+resp.AttachmentID, resp.ObjectKey)
 	objects.AssertExpectations(t)
 }
 
 func TestService_Upload_PNG_Valid(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	magic := pngMagic()
 	extra := bytes.Repeat([]byte("x"), 100)
@@ -186,8 +219,9 @@ func TestService_Upload_PNG_Valid(t *testing.T) {
 	objects.On("PutObject", ctx, mock.MatchedBy(func(key string) bool {
 		return len(key) > 0 && key[:12] == "attachments/"
 	}), mock.Anything, int64(108), "image/png").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-456", "image.png", int64(108), reader)
 
 	require.NoError(t, err)
@@ -198,14 +232,16 @@ func TestService_Upload_PNG_Valid(t *testing.T) {
 func TestService_Upload_GIF87a_Valid(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	magic := gif87Magic()
 	extra := bytes.Repeat([]byte("x"), 50)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(56), "image/gif").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-789", "anim.gif", int64(56), reader)
 
 	require.NoError(t, err)
@@ -216,14 +252,16 @@ func TestService_Upload_GIF87a_Valid(t *testing.T) {
 func TestService_Upload_GIF89a_Valid(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	magic := gif89Magic()
 	extra := bytes.Repeat([]byte("x"), 50)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(56), "image/gif").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-012", "modern.gif", int64(56), reader)
 
 	require.NoError(t, err)
@@ -234,14 +272,16 @@ func TestService_Upload_GIF89a_Valid(t *testing.T) {
 func TestService_Upload_WebP_Valid(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	magic := webpMagic()
 	extra := bytes.Repeat([]byte("x"), 50)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(62), "image/webp").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-345", "modern.webp", int64(62), reader)
 
 	require.NoError(t, err)
@@ -252,14 +292,16 @@ func TestService_Upload_WebP_Valid(t *testing.T) {
 func TestService_Upload_FilenameStored(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	magic := jpegMagic()
 	extra := bytes.Repeat([]byte("x"), 100)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(103), "image/jpeg").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "vacation.jpg", int64(103), reader)
 
 	require.NoError(t, err)
@@ -269,6 +311,7 @@ func TestService_Upload_FilenameStored(t *testing.T) {
 func TestService_Upload_SizeMax_Boundary_5MB(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	maxSize := int64(5 * 1024 * 1024)
 	magic := jpegMagic()
@@ -276,8 +319,9 @@ func TestService_Upload_SizeMax_Boundary_5MB(t *testing.T) {
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, maxSize, "image/jpeg").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "large.jpg", maxSize, reader)
 
 	require.NoError(t, err)
@@ -294,7 +338,7 @@ func TestService_Upload_SizeExceeds_5MBPlus1(t *testing.T) {
 	reader := io.NopCloser(bytes.NewReader(magic))
 
 	// PutObject should NOT be called
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "huge.jpg", oversizeSize, reader)
 
 	assert.ErrorIs(t, err, apperr.ErrFileTooLarge)
@@ -305,13 +349,15 @@ func TestService_Upload_SizeExceeds_5MBPlus1(t *testing.T) {
 func TestService_Upload_SizeMin_Boundary_12B(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	content := []byte{0xFF, 0xD8, 0xFF, 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'} // 12 bytes
 	reader := io.NopCloser(bytes.NewReader(content))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(12), "image/jpeg").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "tiny.jpg", int64(12), reader)
 
 	require.NoError(t, err)
@@ -326,7 +372,7 @@ func TestService_Upload_SizeBelowMin_11B_Rejected(t *testing.T) {
 	content := []byte{0xFF, 0xD8, 0xFF, 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'} // 11 bytes
 	reader := io.NopCloser(bytes.NewReader(content))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "tiny.jpg", int64(11), reader)
 
 	assert.ErrorIs(t, err, apperr.ErrBadRequest)
@@ -340,7 +386,7 @@ func TestService_Upload_Size0_Rejected(t *testing.T) {
 
 	reader := io.NopCloser(bytes.NewReader([]byte("")))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "empty.jpg", 0, reader)
 
 	assert.ErrorIs(t, err, apperr.ErrFileTooLarge)
@@ -354,7 +400,7 @@ func TestService_Upload_SizeNegative_Rejected(t *testing.T) {
 
 	reader := io.NopCloser(bytes.NewReader([]byte("")))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "negative.jpg", -1, reader)
 
 	assert.ErrorIs(t, err, apperr.ErrFileTooLarge)
@@ -370,7 +416,7 @@ func TestService_Upload_PDF_MagicBytes_Rejected(t *testing.T) {
 	extra := bytes.Repeat([]byte("x"), 100)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "doc.pdf", int64(103), reader)
 
 	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
@@ -386,7 +432,7 @@ func TestService_Upload_Executable_MagicBytes_Rejected(t *testing.T) {
 	extra := bytes.Repeat([]byte("x"), 100)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "malware.exe", int64(102), reader)
 
 	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
@@ -402,7 +448,7 @@ func TestService_Upload_ZIP_MagicBytes_Rejected(t *testing.T) {
 	extra := bytes.Repeat([]byte("x"), 100)
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "archive.zip", int64(102), reader)
 
 	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
@@ -417,7 +463,7 @@ func TestService_Upload_FileTooSmall_LessThan4Bytes(t *testing.T) {
 	// ReadHeader expects at least 4 bytes for magic detection
 	reader := io.NopCloser(bytes.NewReader([]byte("ab")))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "tiny.jpg", int64(2), reader)
 
 	assert.ErrorIs(t, err, apperr.ErrBadRequest)
@@ -433,7 +479,7 @@ func TestService_Upload_12BytesBadImage(t *testing.T) {
 	badMagic := bytes.Repeat([]byte("x"), 12)
 	reader := io.NopCloser(bytes.NewReader(badMagic))
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "invalid.jpg", int64(12), reader)
 
 	assert.ErrorIs(t, err, apperr.ErrUnsupportedMIME)
@@ -444,6 +490,7 @@ func TestService_Upload_12BytesBadImage(t *testing.T) {
 func TestService_Upload_ValidImageWrongExtension(t *testing.T) {
 	ctx := context.Background()
 	objects := newMockObjectStore()
+	uploads := newMockUploadStore()
 
 	// PNG magic bytes but .txt filename
 	magic := pngMagic()
@@ -451,8 +498,9 @@ func TestService_Upload_ValidImageWrongExtension(t *testing.T) {
 	reader := io.NopCloser(bytes.NewReader(append(magic, extra...)))
 
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(108), "image/png").Return(nil)
+	uploads.On("SaveUploadRecord", ctx, mock.AnythingOfType("string"), mock.AnythingOfType("attachment.UploadRecord")).Return(nil)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, uploads, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "image.txt", int64(108), reader)
 
 	// Should succeed because validation is based on magic bytes, not extension
@@ -472,7 +520,7 @@ func TestService_Upload_PutObject_Error_Propagated(t *testing.T) {
 	testErr := errors.New("storage unavailable")
 	objects.On("PutObject", ctx, mock.Anything, mock.Anything, int64(103), "image/jpeg").Return(testErr)
 
-	svc := newTestService(objects, nil, nil)
+	svc := newTestService(objects, nil, nil, nil)
 	resp, err := svc.Upload(ctx, "user-123", "photo.jpg", int64(103), reader)
 
 	assert.ErrorIs(t, err, testErr)
@@ -511,18 +559,16 @@ func TestService_Download_HappyPath_LowParticipant(t *testing.T) {
 	mockReader := io.NopCloser(bytes.NewReader([]byte("fake image data")))
 	objects.On("GetObject", ctx, objectKey).Return(mockReader, nil)
 
-	svc := newTestService(objects, messages, conversations)
+	svc := newTestService(objects, nil, messages, conversations)
 	reader, resp, err := svc.Download(ctx, requesterID, attachmentID)
 
 	require.NoError(t, err)
 	require.NotNil(t, reader)
 	require.NotNil(t, resp)
 	assert.Equal(t, attachmentID, resp.AttachmentID)
-	assert.Equal(t, objectKey, resp.ObjectKey)
 	assert.Equal(t, "photo.jpg", resp.Filename)
 	assert.Equal(t, "image/jpeg", resp.MIMEType)
 	assert.Equal(t, int64(1024), resp.Size)
-	assert.Equal(t, "user-high", resp.UploaderID)
 	reader.Close()
 	messages.AssertExpectations(t)
 	conversations.AssertExpectations(t)
@@ -558,7 +604,7 @@ func TestService_Download_HappyPath_HighParticipant(t *testing.T) {
 	mockReader := io.NopCloser(bytes.NewReader([]byte("fake image data")))
 	objects.On("GetObject", ctx, objectKey).Return(mockReader, nil)
 
-	svc := newTestService(objects, messages, conversations)
+	svc := newTestService(objects, nil, messages, conversations)
 	reader, resp, err := svc.Download(ctx, requesterID, attachmentID)
 
 	require.NoError(t, err)
@@ -590,7 +636,6 @@ func TestService_Download_MetadataParsingAllFields(t *testing.T) {
 		"filename":      "document.webp",
 		"mime_type":     "image/webp",
 		"size":          float64(5120), // JSON float64 conversion
-		"uploader_id":   "user-other",
 	}
 
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return(conversationID, metadata, nil, nil)
@@ -599,16 +644,14 @@ func TestService_Download_MetadataParsingAllFields(t *testing.T) {
 	mockReader := io.NopCloser(bytes.NewReader([]byte("")))
 	objects.On("GetObject", ctx, objectKey).Return(mockReader, nil)
 
-	svc := newTestService(objects, messages, conversations)
+	svc := newTestService(objects, nil, messages, conversations)
 	_, resp, err := svc.Download(ctx, requesterID, attachmentID)
 
 	require.NoError(t, err)
 	assert.Equal(t, attachmentID, resp.AttachmentID)
-	assert.Equal(t, objectKey, resp.ObjectKey)
 	assert.Equal(t, "document.webp", resp.Filename)
 	assert.Equal(t, "image/webp", resp.MIMEType)
 	assert.Equal(t, int64(5120), resp.Size) // float64 converted to int64
-	assert.Equal(t, "user-other", resp.UploaderID)
 }
 
 func TestService_Download_AttachmentNotFound(t *testing.T) {
@@ -619,7 +662,7 @@ func TestService_Download_AttachmentNotFound(t *testing.T) {
 
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return("", nil, nil, nil)
 
-	svc := newTestService(nil, messages, nil)
+	svc := newTestService(nil, nil, messages, nil)
 	reader, resp, err := svc.Download(ctx, "user-123", attachmentID)
 
 	assert.ErrorIs(t, err, apperr.ErrNotFound)
@@ -639,7 +682,7 @@ func TestService_Download_MetadataNil(t *testing.T) {
 
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return(conversationID, nil, nil, nil)
 
-	svc := newTestService(nil, messages, nil)
+	svc := newTestService(nil, nil, messages, nil)
 	reader, resp, err := svc.Download(ctx, "user-123", attachmentID)
 
 	assert.ErrorIs(t, err, apperr.ErrNotFound)
@@ -669,7 +712,7 @@ func TestService_Download_ObjectKeyEmpty(t *testing.T) {
 
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return(conversationID, metadata, nil, nil)
 
-	svc := newTestService(nil, messages, nil)
+	svc := newTestService(nil, nil, messages, nil)
 	reader, resp, err := svc.Download(ctx, "user-123", attachmentID)
 
 	assert.ErrorIs(t, err, apperr.ErrNotFound)
@@ -699,7 +742,7 @@ func TestService_Download_MessageDeleted(t *testing.T) {
 	deletedAt := time.Now()
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return(conversationID, metadata, &deletedAt, nil)
 
-	svc := newTestService(nil, messages, nil)
+	svc := newTestService(nil, nil, messages, nil)
 	reader, resp, err := svc.Download(ctx, "user-123", attachmentID)
 
 	assert.ErrorIs(t, err, apperr.ErrNotFound)
@@ -733,7 +776,7 @@ func TestService_Download_RequesterNotParticipant(t *testing.T) {
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return(conversationID, metadata, nil, nil)
 	conversations.On("GetParticipants", ctx, conversationID).Return(otherID1, otherID2, nil)
 
-	svc := newTestService(nil, messages, conversations)
+	svc := newTestService(nil, nil, messages, conversations)
 	reader, resp, err := svc.Download(ctx, requesterID, attachmentID)
 
 	assert.ErrorIs(t, err, apperr.ErrNotFound)
@@ -752,7 +795,7 @@ func TestService_Download_FindByAttachmentID_Error(t *testing.T) {
 	testErr := errors.New("database error")
 	messages.On("FindByAttachmentID", ctx, attachmentID).Return("", nil, nil, testErr)
 
-	svc := newTestService(nil, messages, nil)
+	svc := newTestService(nil, nil, messages, nil)
 	reader, resp, err := svc.Download(ctx, "user-123", attachmentID)
 
 	assert.ErrorIs(t, err, testErr)
@@ -785,7 +828,7 @@ func TestService_Download_GetParticipants_Error(t *testing.T) {
 	testErr := errors.New("conversation not found")
 	conversations.On("GetParticipants", ctx, conversationID).Return("", "", testErr)
 
-	svc := newTestService(nil, messages, conversations)
+	svc := newTestService(nil, nil, messages, conversations)
 	reader, resp, err := svc.Download(ctx, "user-123", attachmentID)
 
 	assert.ErrorIs(t, err, testErr)
@@ -824,7 +867,7 @@ func TestService_Download_GetObject_Error(t *testing.T) {
 	testErr := errors.New("object not found in storage")
 	objects.On("GetObject", ctx, objectKey).Return(nil, testErr)
 
-	svc := newTestService(objects, messages, conversations)
+	svc := newTestService(objects, nil, messages, conversations)
 	reader, resp, err := svc.Download(ctx, requesterID, attachmentID)
 
 	assert.ErrorIs(t, err, testErr)

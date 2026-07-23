@@ -59,6 +59,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, mini
 	// ── infrastructure ────────────────────────────────────────────────────────
 	presenceStore := presence.NewStore(redisClient, config.App.PresenceTTL)
 	minioStore := miniodb.NewStore(minioClient)
+	uploadStore := attachment.NewRedisUploadStore(redisClient)
 
 	// ── repositories ─────────────────────────────────────────────────────────
 	authRepo := auth.NewRepository(db, redisClient, config.App.RefreshTokenExpiry)
@@ -75,13 +76,14 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, mini
 	userSvc := user.NewService(userRepo, blockSvc, presenceStore)
 	friendSvc := friend.NewService(friendRepo, blockSvc)
 	conversationSvc := conversation.NewService(conversationRepo, blockSvc)
-	attachmentSvc := attachment.NewService(minioStore, messageRepo, conversationRepo)
+	attachmentSvc := attachment.NewService(minioStore, uploadStore, messageRepo, conversationRepo)
 	messageSvc := message.NewService(
 		messageRepo,
 		conversationRepo,
 		blockSvc,
 		hub,
 		message.WithObjectDeleter(minioStore),
+		message.WithAttachmentStore(uploadStore),
 	)
 	// ── handlers ──────────────────────────────────────────────────────────────
 	authHandler := auth.NewHandler(authSvc)

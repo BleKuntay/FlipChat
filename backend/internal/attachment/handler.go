@@ -3,11 +3,23 @@ package attachment
 import (
 	"context"
 	"fmt"
-	"github.com/BleKuntay/FlipChat/backend/pkg/httputil"
-	"github.com/gofiber/fiber/v3"
 	"io"
 	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/BleKuntay/FlipChat/backend/pkg/httputil"
+	"github.com/gofiber/fiber/v3"
 )
+
+// allowedMIMETypes is the allowlist for Content-Type on download.
+// Prevents a client-supplied mime_type from being reflected as-is.
+var allowedMIMETypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
 
 type ServiceInterface interface {
 	Upload(ctx context.Context, uploaderID, filename string, size int64, reader io.Reader) (*UploadResponse, error)
@@ -61,13 +73,38 @@ func (h *Handler) Download(c fiber.Ctx) error {
 	}
 	defer reader.Close()
 
-	contentDisposition := fmt.Sprintf(`inline; filename="%s"`, metadata.Filename)
-	contentLength := strconv.FormatInt(metadata.Size, 10)
+	mimeType := metadata.MIMEType
+	if !allowedMIMETypes[mimeType] {
+		mimeType = "application/octet-stream"
+	}
 
-	c.Set(fiber.HeaderContentType, metadata.MIMEType)
-	c.Set(fiber.HeaderContentDisposition, contentDisposition)
-	c.Set(fiber.HeaderContentLength, contentLength)
+	c.Set(fiber.HeaderContentType, mimeType)
+	c.Set(fiber.HeaderContentDisposition, safeContentDisposition(metadata.Filename))
+	c.Set(fiber.HeaderContentLength, strconv.FormatInt(metadata.Size, 10))
+	c.Set("X-Content-Type-Options", "nosniff")
 
 	_, err = io.Copy(c.Response().BodyWriter(), reader)
 	return err
+}
+
+// safeContentDisposition builds a Content-Disposition header value that
+// is safe against header injection and quote-breaking. Filename is
+// truncated to 200 runes, control characters are stripped, and
+// double-quotes are escaped.
+func safeContentDisposition(filename string) string {
+	// Strip control characters and limit length.
+	var b strings.Builder
+	count := 0
+	for _, r := range filename {
+		if count >= 200 {
+			break
+		}
+		if r >= 0x20 && utf8.ValidRune(r) {
+			b.WriteRune(r)
+			count++
+		}
+	}
+
+	safe := strings.ReplaceAll(b.String(), `"`, `\"`)
+	return fmt.Sprintf(`inline; filename="%s"`, safe)
 }
