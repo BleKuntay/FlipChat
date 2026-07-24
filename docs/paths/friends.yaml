@@ -4,12 +4,6 @@ paths:
       tags: [friends]
       summary: List all friends
       parameters:
-        - name: q
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter by friend's name or username (case-insensitive substring match)
         - name: cursor
           in: query
           required: false
@@ -35,8 +29,7 @@ paths:
                     items:
                       $ref: '../openapi.yaml#/components/schemas/FriendResponse'
                   next_cursor:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
         "500":
@@ -58,13 +51,6 @@ paths:
           schema:
             type: integer
             default: 20
-        - name: direction
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [sent, received]
-          description: Filter by direction
       responses:
         "200":
           description: List of pending friend requests
@@ -78,8 +64,7 @@ paths:
                     items:
                       $ref: '../openapi.yaml#/components/schemas/FriendRequestResponse'
                   next_cursor:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
         "500":
@@ -192,7 +177,7 @@ paths:
           $ref: '../openapi.yaml#/components/responses/InternalServerError'
 
   /friends/requests/{id}/decline:
-    put:
+    delete:
       tags: [friends]
       summary: Decline a friend request
       parameters:
@@ -211,30 +196,5 @@ paths:
           $ref: '../openapi.yaml#/components/responses/Forbidden'
         "404":
           $ref: '../openapi.yaml#/components/responses/NotFound'
-        "500":
-          $ref: '../openapi.yaml#/components/responses/InternalServerError'
-  
-  /friends/requests/{id}:
-    delete:
-      tags: [friends]
-      summary: Cancel a sent friend request
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "204":
-          description: Friend request cancelled
-        "401":
-          $ref: '../openapi.yaml#/components/responses/Unauthorized'
-        "403":
-          $ref: '../openapi.yaml#/components/responses/Forbidden'
-        "404":
-          $ref: '../openapi.yaml#/components/responses/NotFound'
-        "409":
-          $ref: '../openapi.yaml#/components/responses/Conflict'
         "500":
           $ref: '../openapi.yaml#/components/responses/InternalServerError'

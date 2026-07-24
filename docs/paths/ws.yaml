@@ -1,0 +1,42 @@
+paths:
+  /ws:
+    get:
+      tags: [websocket]
+      summary: Open a WebSocket connection
+      description: |
+        Upgrades the HTTP connection to WebSocket. All real-time events
+        (new messages, edits, deletes, read receipts, presence) are
+        delivered over this connection.
+
+        See `docs/websocket.md` for the full event schema, heartbeat
+        protocol, and connection lifecycle.
+
+        **Authentication:** pass the access token as a query parameter.
+        Browsers cannot set the `Authorization` header during the WebSocket
+        handshake.
+
+        **One connection per user:** opening a second connection from the
+        same account closes the first one silently.
+      security:
+        - {} # overrides global bearerAuth — auth is via query param
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            Valid access token (same value as the `Authorization: Bearer <token>`
+            header used for REST endpoints).
+            **Keep access tokens short-lived.** Query parameters may appear
+            in server access logs — ensure your reverse proxy is configured
+            to suppress query strings for this path.
+      responses:
+        "101":
+          description: Switching Protocols — WebSocket connection established
+        "401":
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'

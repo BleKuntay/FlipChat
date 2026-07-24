@@ -41,8 +41,7 @@ paths:
                     items:
                       $ref: '../openapi.yaml#/components/schemas/MessageResponse'
                   next_cursor:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
                     description: Pass this as cursor to fetch older messages
                   has_more:
                     type: boolean
@@ -55,11 +54,19 @@ paths:
 
     post:
       tags: [messages]
-      summary: Send a message in a conversation
+      summary: Send a message
       description: |
-        Sends a text message, attachment, or both. Optionally quote-reply another message
-        in the same conversation via `reply_to_id`.
-        Only participants can send. Blocked users cannot send.
+        Sends a text message, an image attachment, or both.
+
+        **Text only:** include `content`, omit `attachment_id`.
+
+        **Attachment only:** include `attachment_id` (obtained from
+        `POST /attachments/upload`), omit or leave `content` empty.
+
+        **Both:** include both fields.
+
+        Blocked users cannot send. The attachment record expires 1 hour
+        after upload — if `attachment_id` is no longer valid, re-upload.
       parameters:
         - name: id
           in: path
@@ -77,31 +84,35 @@ paths:
               properties:
                 content:
                   type: string
-                  nullable: true
-                  description: Message text. Required if attachment_id is not provided.
+                  example: "halo!"
+                  description: Message text. Optional when attachment_id is present.
                 reply_to_id:
-                  type: string
+                  type: [string, "null"]
                   format: uuid
-                  nullable: true
                   description: ID of the message being replied to (must be in same conversation)
                 attachment_id:
-                  type: string
+                  type: [string, "null"]
                   format: uuid
-                  nullable: true
-                  description: ID from POST /attachments/upload. Required if content is not provided.
-                filename:
-                  type: string
-                  nullable: true
-                mime_type:
-                  type: string
-                  nullable: true
-                size:
-                  type: integer
-                  format: int64
-                  nullable: true
+                  description: |
+                    Attachment ID returned by `POST /attachments/upload`.
+                    Consumed on first use — cannot be reused across messages.
+            examples:
+              text_only:
+                summary: Text only
+                value:
+                  content: "halo!"
+              attachment_only:
+                summary: Attachment only
+                value:
+                  attachment_id: "550e8400-e29b-41d4-a716-446655440000"
+              text_and_attachment:
+                summary: Text with attachment
+                value:
+                  content: "lihat foto ini!"
+                  attachment_id: "550e8400-e29b-41d4-a716-446655440000"
       responses:
         "201":
-          description: Message sent successfully
+          description: Message sent
           content:
             application/json:
               schema:
@@ -116,14 +127,19 @@ paths:
           $ref: '../openapi.yaml#/components/responses/NotFound'
         "500":
           $ref: '../openapi.yaml#/components/responses/InternalServerError'
-      
+
   /conversations/{id}/messages/{msg_id}:
     patch:
       tags: [messages]
       summary: Edit a message
       description: |
-        Only the sender can edit. Edit window is 15 minutes from creation.
-        Deleted messages cannot be edited.
+        Updates the text content of a message.
+
+        **Constraints:**
+        - Only the sender can edit their own message.
+        - Editing is only allowed within 15 minutes of `created_at`.
+        - Deleted messages cannot be edited.
+        - Empty content is not accepted.
       parameters:
         - name: id
           in: path
@@ -149,10 +165,11 @@ paths:
               properties:
                 content:
                   type: string
-                  example: "pesan yang sudah diedit"
+                  description: New message content, must not be empty
+                  example: "ralat, maksudnya besok ya"
       responses:
         "200":
-          description: Message edited successfully
+          description: Message updated
           content:
             application/json:
               schema:
@@ -162,7 +179,12 @@ paths:
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
         "403":
-          $ref: '../openapi.yaml#/components/responses/Forbidden'
+          description: |
+            Not the sender, message is deleted, or edit window (15 min) has passed
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
         "404":
           $ref: '../openapi.yaml#/components/responses/NotFound'
         "500":
@@ -172,8 +194,12 @@ paths:
       tags: [messages]
       summary: Delete a message
       description: |
-        Soft delete — content is cleared but the message record remains.
-        Only the sender can delete. Already-deleted messages return 409.
+        Soft-deletes a message. The message record is retained but `content`
+        becomes null, `metadata` is cleared, and `is_deleted` is set to true.
+
+        - Only the sender can delete their own message.
+        - No time limit.
+        - Deleting an already-deleted message returns 409.
       parameters:
         - name: id
           in: path
@@ -191,7 +217,7 @@ paths:
           description: Message ID
       responses:
         "200":
-          description: Message deleted successfully
+          description: Message deleted
           content:
             application/json:
               schema:
@@ -203,7 +229,11 @@ paths:
         "404":
           $ref: '../openapi.yaml#/components/responses/NotFound'
         "409":
-          $ref: '../openapi.yaml#/components/responses/Conflict'
+          description: Message is already deleted
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
         "500":
           $ref: '../openapi.yaml#/components/responses/InternalServerError'
 
@@ -212,9 +242,13 @@ paths:
       tags: [messages]
       summary: Mark a message as read
       description: |
-        Only the recipient (non-sender) can mark as read.
-        Deleted messages cannot be marked as read.
-        Already-read messages return the existing response without error.
+        Records that the authenticated user has read the message and notifies
+        the sender via a `message.read` WebSocket event.
+
+        - Only the recipient (non-sender) can mark a message as read.
+        - Idempotent: if already read, returns the message unchanged.
+        - Deleted messages cannot be marked as read.
+        - Blocked users cannot mark messages as read.
       parameters:
         - name: id
           in: path
@@ -232,7 +266,7 @@ paths:
           description: Message ID
       responses:
         "200":
-          description: Message marked as read
+          description: Message marked as read (or was already read)
           content:
             application/json:
               schema:

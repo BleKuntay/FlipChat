@@ -10,6 +10,9 @@ info:
     Minor version increments (0.1.0 → 0.2.0) correspond to feature phases.
     1.0.0 marks the first stable, publicly committed API contract.
 
+    **Real-time events** are delivered over WebSocket. See `docs/websocket.md`
+    for the full event schema and connection protocol.
+
 servers:
   - url: http://localhost:8080/v1
     description: Local development
@@ -28,9 +31,11 @@ tags:
   - name: conversations
     description: One-to-one conversation management
   - name: messages
-    description: Sending and retrieving messages within a conversation
+    description: Sending, editing, deleting, and reading messages
   - name: attachments
-    description: File upload and download
+    description: Image upload and download (JPEG, PNG, GIF, WebP — max 5 MB)
+  - name: websocket
+    description: Real-time event stream. See docs/websocket.md for full protocol.
 
 security:
   - bearerAuth: []
@@ -88,15 +93,6 @@ components:
           example:
             error: "bad request"
 
-    UnprocessableEntity:
-      description: File validation failed (unsupported type or too large)
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error: "unsupported file type: only JPEG, PNG, GIF, WebP allowed"
-
     InternalServerError:
       description: Unexpected server error
       content:
@@ -126,16 +122,14 @@ components:
         username:
           type: string
         avatar_url:
-          type: string
+          type: [string, "null"]
           format: uri
-          nullable: true
         is_online:
           type: boolean
-          default: false
+          description: Whether the user currently has an active WebSocket connection
         last_seen_at:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
 
     UserDetail:
       allOf:
@@ -143,8 +137,7 @@ components:
         - type: object
           properties:
             bio:
-              type: string
-              nullable: true
+              type: [string, "null"]
             language:
               type: string
               example: "en"
@@ -161,46 +154,13 @@ components:
               type: string
               format: email
 
-    AuthUser:
-      description: |
-        User payload returned on register/login. Intentionally excludes
-        presence fields (is_online, last_seen_at) — the caller is the
-        user themselves, at the moment of authenticating, so presence
-        is not meaningful information here. See MeResponse for the
-        presence-aware profile schema used by GET /users/me.
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        username:
-          type: string
-        avatar_url:
-          type: string
-          format: uri
-          nullable: true
-        bio:
-          type: string
-          nullable: true
-        language:
-          type: string
-          example: "en"
-        created_at:
-          type: string
-          format: date-time
-        email:
-          type: string
-          format: email
-
     AuthResponse:
       type: object
       properties:
         access_token:
           type: string
         user:
-          $ref: '#/components/schemas/AuthUser'
+          $ref: '#/components/schemas/MeResponse'
 
     FriendResponse:
       type: object
@@ -236,30 +196,22 @@ components:
           type: string
           format: date-time
 
-    BlockResponse:
-      type: object
-      properties:
-        blocker_id:
-          type: string
-          format: uuid
-        blocked_id:
-          type: string
-          format: uuid
-
-    BlockedSummary:
+    BlockedUserResponse:
       type: object
       properties:
         user_id:
           type: string
           format: uuid
-        name:
-          type: string
         username:
           type: string
-        avatar_url:
+        name:
           type: string
+        avatar_url:
+          type: [string, "null"]
           format: uri
-          nullable: true
+        blocked_at:
+          type: string
+          format: date-time
 
     ConversationResponse:
       type: object
@@ -274,17 +226,35 @@ components:
           type: string
           description: Username of the other participant
         avatar_url:
-          type: string
+          type: [string, "null"]
           format: uri
-          nullable: true
         last_message_preview:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: Content of the most recent message
         last_message_at:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
+
+    AttachmentMetadata:
+      type: object
+      description: |
+        Attachment metadata embedded in a MessageResponse when the message
+        carries a file. The download URL is not included here — use
+        `GET /attachments/{attachment_id}` to fetch the file.
+      properties:
+        attachment_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+          example: "photo.jpg"
+        mime_type:
+          type: string
+          enum: [image/jpeg, image/png, image/gif, image/webp]
+        size:
+          type: integer
+          description: File size in bytes (max 5242880)
+          example: 204800
 
     MessageResponse:
       type: object
@@ -300,53 +270,54 @@ components:
           type: string
           format: uuid
         content:
-          type: string
-          nullable: true
+          type: [string, "null"]
+          description: null when the message has been deleted
         reply_to_id:
-          type: string
+          type: [string, "null"]
           format: uuid
-          nullable: true
         metadata:
-          type: object
-          nullable: true
-          description: Attachment metadata (attachment_id, object_key, filename, mime_type, size, uploader_id)
+          oneOf:
+            - $ref: '#/components/schemas/AttachmentMetadata'
+            - type: "null"
+          description: Present only for messages with an attachment, null otherwise
         is_edited:
           type: boolean
           default: false
         is_deleted:
           type: boolean
           default: false
+          description: When true, content is null and metadata is null
         created_at:
           type: string
           format: date-time
         updated_at:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
+          description: Set when the message has been edited
         read_at:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
+          description: Set when the recipient has marked this message as read
 
-    AttachmentResponse:
+    UploadResponse:
       type: object
       properties:
         attachment_id:
           type: string
           format: uuid
-        object_key:
-          type: string
+          description: |
+            Pass this as `attachment_id` in the SendMessage request body.
+            Valid for 1 hour. After that the record is expired and the upload
+            must be repeated.
         filename:
           type: string
+          example: "photo.jpg"
         mime_type:
           type: string
-          example: "image/jpeg"
+          enum: [image/jpeg, image/png, image/gif, image/webp]
         size:
           type: integer
-          format: int64
-        uploader_id:
-          type: string
-          format: uuid
+          example: 204800
 
 paths:
   /auth/register:
@@ -377,17 +348,15 @@ paths:
     $ref: './paths/friends.yaml#/paths/~1friends~1requests'
   /friends/{id}:
     $ref: './paths/friends.yaml#/paths/~1friends~1{id}'
-  /friends/requests/{id}:
-    $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}'
   /friends/requests/{id}/accept:
     $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}~1accept'
   /friends/requests/{id}/decline:
     $ref: './paths/friends.yaml#/paths/~1friends~1requests~1{id}~1decline'
 
-  /blocks/me/blocks:
-    $ref: './paths/blocks.yaml#/paths/~1blocks~1me~1blocks'
-  /blocks/{id}/block:
-    $ref: './paths/blocks.yaml#/paths/~1blocks~1{id}~1block'
+  /blocks:
+    $ref: './paths/blocks.yaml#/paths/~1blocks'
+  /blocks/{id}:
+    $ref: './paths/blocks.yaml#/paths/~1blocks~1{id}'
 
   /conversations:
     $ref: './paths/conversations.yaml#/paths/~1conversations'
@@ -405,3 +374,6 @@ paths:
     $ref: './paths/attachments.yaml#/paths/~1attachments~1upload'
   /attachments/{id}:
     $ref: './paths/attachments.yaml#/paths/~1attachments~1{id}'
+
+  /ws:
+    $ref: './paths/ws.yaml#/paths/~1ws'

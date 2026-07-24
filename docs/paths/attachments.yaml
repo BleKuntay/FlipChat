@@ -2,11 +2,23 @@ paths:
   /attachments/upload:
     post:
       tags: [attachments]
-      summary: Upload a file attachment
+      summary: Upload an image attachment
       description: |
-        Accepts multipart/form-data with a single `file` field.
-        Supported types: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
-        Returns attachment metadata to be passed when sending a message.
+        Uploads an image file and returns an `attachment_id` to be used in
+        `POST /conversations/{id}/messages`.
+
+        **Accepted formats:** JPEG, PNG, GIF, WebP (validated by magic bytes,
+        not by file extension or `Content-Type` header).
+
+        **Size limit:** 5 MB. Requests larger than 6 MB are rejected before
+        the handler is reached (server-level body limit).
+
+        **Expiry:** the attachment record is valid for **1 hour**. If
+        `SendMessage` is not called within that window, the upload is
+        discarded and must be repeated.
+
+        **One-time use:** an `attachment_id` is consumed on the first
+        `SendMessage` call. It cannot be reused.
       requestBody:
         required: true
         content:
@@ -18,30 +30,45 @@ paths:
                 file:
                   type: string
                   format: binary
+                  description: Image file. Field name must be exactly `file`.
       responses:
         "201":
           description: File uploaded successfully
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/AttachmentResponse'
+                $ref: '../openapi.yaml#/components/schemas/UploadResponse'
         "400":
-          $ref: '../openapi.yaml#/components/responses/BadRequest'
+          description: |
+            Missing `file` field, unsupported format, or file too small/large
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+              examples:
+                unsupported_mime:
+                  value:
+                    error: "unsupported mime type"
+                file_too_large:
+                  value:
+                    error: "file too large"
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
-        "422":
-          $ref: '../openapi.yaml#/components/responses/UnprocessableEntity'
         "500":
           $ref: '../openapi.yaml#/components/responses/InternalServerError'
 
   /attachments/{id}:
     get:
       tags: [attachments]
-      summary: Download a file attachment
+      summary: Download an attachment
       description: |
-        Streams the file directly. Only participants of the conversation
-        that contains the attachment can download.
-        Returns 404 if the attachment belongs to a deleted message.
+        Streams the attachment file. Only accessible by participants of the
+        conversation the message belongs to.
+
+        The response body is the raw file bytes. Use the `Content-Type` header
+        to determine the image format.
+
+        Deleted messages return 404 — the associated file is also removed.
       parameters:
         - name: id
           in: path
@@ -49,15 +76,15 @@ paths:
           schema:
             type: string
             format: uuid
-          description: Attachment ID
+          description: Attachment ID (from `MessageResponse.metadata.attachment_id`)
       responses:
         "200":
-          description: File stream
+          description: File bytes
           headers:
             Content-Type:
               schema:
                 type: string
-                example: "image/jpeg"
+                enum: [image/jpeg, image/png, image/gif, image/webp]
             Content-Disposition:
               schema:
                 type: string
@@ -65,6 +92,10 @@ paths:
             Content-Length:
               schema:
                 type: integer
+            X-Content-Type-Options:
+              schema:
+                type: string
+                example: nosniff
           content:
             image/jpeg:
               schema:
