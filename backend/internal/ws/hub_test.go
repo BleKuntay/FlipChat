@@ -147,16 +147,6 @@ func TestHub_FanOutToConversation_BlockCheckError_NoPanic(t *testing.T) {
 	blockChecker.AssertCalled(t, "IsBlockedEitherWay", ctx, senderID, recipientID)
 }
 
-// ── IsOnline tests ────────────────────────────────────────────────────────────
-
-func TestHub_IsOnline_UnregisteredUser_ReturnsFalse(t *testing.T) {
-	blockChecker := newMockBlockChecker()
-	hub := ws.NewHub(blockChecker)
-
-	assert.False(t, hub.IsOnline("nonexistent"))
-	assert.False(t, hub.IsOnline(""))
-}
-
 // ── Concurrency tests ─────────────────────────────────────────────────────────
 
 func TestHub_Concurrency_FanOutMultipleTimes_NoPanic(t *testing.T) {

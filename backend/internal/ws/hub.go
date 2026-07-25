@@ -107,11 +107,3 @@ func (h *Hub) FanOutToConversation(ctx context.Context, senderID, recipientID st
 
 	h.SendToUser(recipientID, eventType, payload)
 }
-
-// IsOnline reports whether a user has an active WebSocket connection.
-func (h *Hub) IsOnline(userID string) bool {
-	h.mu.RLock()
-	_, ok := h.clients[userID]
-	h.mu.RUnlock()
-	return ok
-}
