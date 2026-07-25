@@ -101,7 +101,7 @@ func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, mini
 	authHandler.RegisterRoutes(v1.Group("/auth"))
 	wsHandler.RegisterRoute(v1)
 
-	protected := v1.Use(jwt.Protected())
+	protected := v1.Group("", jwt.Protected())
 
 	userHandler.RegisterRoutes(protected.Group("/users"))
 	friendHandler.RegisterRoutes(protected.Group("/friends"))
