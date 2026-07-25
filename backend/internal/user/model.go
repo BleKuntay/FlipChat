@@ -19,10 +19,10 @@ type User struct {
 // ----- Request -----
 
 type UpdateProfileRequest struct {
-	Name     string `json:"name"`
-	Username string `json:"username"`
-	Bio      string `json:"bio"`
-	Language string `json:"language"`
+	Name     string  `json:"name"`
+	Username string  `json:"username"`
+	Bio      *string `json:"bio"`
+	Language string  `json:"language"`
 }
 
 type UpdateEmailRequest struct {

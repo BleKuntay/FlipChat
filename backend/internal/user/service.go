@@ -88,8 +88,12 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, request *Upd
 		updated = true
 	}
 
-	if request.Bio != "" {
-		user.Bio = &request.Bio
+	if request.Bio != nil {
+		if *request.Bio == "" {
+			user.Bio = nil
+		} else {
+			user.Bio = request.Bio
+		}
 		updated = true
 	}
 

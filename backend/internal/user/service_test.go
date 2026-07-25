@@ -258,12 +258,12 @@ func TestService_UpdateProfile(t *testing.T) {
 		repo.On("UpdateProfile", mock.Anything, mock.AnythingOfType("*user.User")).Return(updated, nil)
 
 		svc := newTestService(repo, bc, pc)
-		_, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{Name: "New Name", Bio: ""})
+		_, err := svc.UpdateProfile(ctx, u.ID, &UpdateProfileRequest{Name: "New Name"})
 		require.NoError(t, err)
 
 		call := repo.Calls[1]
 		passedUser := call.Arguments.Get(1).(*User)
-		assert.Equal(t, u.Bio, passedUser.Bio, "bio should not change because request.Bio is empty")
+		assert.Equal(t, u.Bio, passedUser.Bio, "bio should not change when Bio is nil")
 	})
 
 	t.Run("user not found", func(t *testing.T) {
