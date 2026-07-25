@@ -58,6 +58,8 @@ func NewClient(userID string, conn *websocket.Conn, hub *Hub, presence PresenceS
 
 // Run starts the read and write pumps and blocks until the connection closes.
 func (c *Client) Run(ctx context.Context) {
+	defer c.close()
+
 	if err := c.presence.SetOnline(ctx, c.userID); err != nil {
 		logger.Error("ws: failed to set online", zap.String("user_id", c.userID), zap.Error(err))
 	}
