@@ -156,6 +156,14 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+			// Refresh presence on every ping tick so the server guarantees
+			// liveness — client heartbeat events become optional.
+			if err := c.presence.SetOnline(context.Background(), c.userID); err != nil {
+				logger.Error("ws: presence refresh failed",
+					zap.String("user_id", c.userID),
+					zap.Error(err),
+				)
+			}
 
 		case <-c.done:
 			_ = c.conn.WriteMessage(websocket.CloseMessage,
