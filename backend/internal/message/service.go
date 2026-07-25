@@ -229,6 +229,10 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 }
 
 func (s *Service) EditMessage(ctx context.Context, userID, conversationID, messageID string, request EditRequest) (*Response, error) {
+	if strings.TrimSpace(request.Content) == "" {
+		return nil, apperr.ErrBadRequest
+	}
+
 	other, err := s.otherParticipant(ctx, userID, conversationID)
 	if err != nil {
 		return nil, err
