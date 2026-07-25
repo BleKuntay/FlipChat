@@ -740,7 +740,7 @@ func TestService_SendMessage_AttachmentExpired_ReturnsNotFound(t *testing.T) {
 	atts.AssertExpectations(t)
 }
 
-func TestService_SendMessage_ReplyToDeletedMessage_Succeeds(t *testing.T) {
+func TestService_SendMessage_ReplyToDeletedMessage_ReturnsNotFound(t *testing.T) {
 	ctx := context.Background()
 	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
 
@@ -752,9 +752,6 @@ func TestService_SendMessage_ReplyToDeletedMessage_Succeeds(t *testing.T) {
 	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
 	blks.On("IsBlockedEitherWay", ctx, "user-high", "user-low").Return(false, nil)
 	repo.On("GetByID", ctx, replyID).Return(deletedMsg, nil)
-	repo.On("Create", ctx, mock.MatchedBy(func(m *message.Message) bool {
-		return m.ReplyToID != nil && *m.ReplyToID == replyID
-	})).Return(nil)
 
 	svc := newTestService(repo, convs, blks)
 
@@ -763,9 +760,9 @@ func TestService_SendMessage_ReplyToDeletedMessage_Succeeds(t *testing.T) {
 		ReplyToID: strPtr(replyID),
 	})
 
-	require.NoError(t, err)
-	assert.NotNil(t, resp)
-	repo.AssertExpectations(t)
+	assert.ErrorIs(t, err, apperr.ErrNotFound)
+	assert.Nil(t, resp)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
 // ── DeleteMessage — kasus attachment + MinIO cleanup ─────────────────────────
@@ -906,4 +903,22 @@ func TestService_DeleteMessage_ObjectsNilWithAttachment_NoPanic(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, resp.IsDeleted)
 	repo.AssertExpectations(t)
+}
+
+// ── MarkAsRead ────────────────────────────────────────────────────────────────
+
+func TestService_MarkAsRead_Blocked_ReturnsNotFound(t *testing.T) {
+	ctx := context.Background()
+	repo, convs, blks := new(mockRepo), new(mockConvStore), new(mockBlockChecker)
+
+	convs.On("GetParticipants", ctx, "conv-1").Return("user-low", "user-high", nil)
+	blks.On("IsBlockedEitherWay", ctx, "user-low", "user-high").Return(true, nil)
+
+	svc := newTestService(repo, convs, blks)
+	resp, err := svc.MarkAsRead(ctx, "user-low", "conv-1", "msg-1")
+
+	assert.ErrorIs(t, err, apperr.ErrNotFound)
+	assert.Nil(t, resp)
+	repo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "MarkAsRead", mock.Anything, mock.Anything)
 }

@@ -158,6 +158,9 @@ func (s *Service) SendMessage(ctx context.Context, userID, conversationID string
 		if reply.ConversationID != conversationID {
 			return nil, apperr.ErrForbidden
 		}
+		if reply.DeletedAt != nil {
+			return nil, apperr.ErrNotFound
+		}
 	}
 
 	var content *string
