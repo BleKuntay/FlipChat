@@ -171,7 +171,7 @@ func (r *Repository) RotateRefreshToken(ctx context.Context, oldToken, newToken 
 		return apperr.ErrBadRequest
 	}
 
-	pipe := r.rdb.Pipeline()
+	pipe := r.rdb.TxPipeline()
 
 	pipe.Del(ctx, tokenKey(oldToken))
 	pipe.SRem(ctx, userTokensKey(userID), oldToken)
