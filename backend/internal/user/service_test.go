@@ -114,6 +114,14 @@ func (mpc *mockPresenceChecker) IsOnline(ctx context.Context, userID string) (bo
 	return args.Bool(0), args.Error(1)
 }
 
+func (mpc *mockPresenceChecker) AreOnline(ctx context.Context, userIDs []string) (map[string]bool, error) {
+	args := mpc.Called(ctx, userIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]bool), args.Error(1)
+}
+
 type mockSessionRevoker struct{ mock.Mock }
 
 func (m *mockSessionRevoker) DeleteTokenByUserID(ctx context.Context, userID string) error {
@@ -620,7 +628,7 @@ func TestService_FindUserByID(t *testing.T) {
 
 		assert.Nil(t, res)
 		assert.ErrorIs(t, err, apperr.ErrNotFound)
-		pc.AssertNotCalled(t, "IsOnline")
+		pc.AssertNotCalled(t, "AreOnline")
 	})
 
 	t.Run("user not found", func(t *testing.T) {
@@ -636,7 +644,7 @@ func TestService_FindUserByID(t *testing.T) {
 		assert.Nil(t, res)
 		assert.ErrorIs(t, err, apperr.ErrNotFound)
 		bc.AssertNotCalled(t, "IsBlockedEitherWay")
-		pc.AssertNotCalled(t, "IsOnline")
+		pc.AssertNotCalled(t, "AreOnline")
 	})
 
 	t.Run("block checker error → propagate error", func(t *testing.T) {
@@ -653,7 +661,7 @@ func TestService_FindUserByID(t *testing.T) {
 		_, err := svc.FindUserByID(ctx, "caller", &GetUserURI{ID: u.ID})
 
 		assert.ErrorIs(t, err, dbErr)
-		pc.AssertNotCalled(t, "IsOnline")
+		pc.AssertNotCalled(t, "AreOnline")
 	})
 }
 
@@ -673,8 +681,7 @@ func TestService_Search(t *testing.T) {
 
 		summaries := []*Summary{makeSummary("a", "alice"), makeSummary("b", "bob")}
 		repo.On("Search", mock.Anything, "me", "ali", "", 11).Return(summaries, nil)
-		pc.On("IsOnline", mock.Anything, "a").Return(false, nil)
-		pc.On("IsOnline", mock.Anything, "b").Return(true, nil)
+		pc.On("AreOnline", mock.Anything, []string{"a", "b"}).Return(map[string]bool{"a": false, "b": true}, nil)
 
 		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "ali", Limit: 10})
@@ -696,8 +703,7 @@ func TestService_Search(t *testing.T) {
 			makeSummary("c", "charlie"), // extra record signalling has_more
 		}
 		repo.On("Search", mock.Anything, "me", "b", "", 3).Return(summaries, nil)
-		pc.On("IsOnline", mock.Anything, "a").Return(false, nil)
-		pc.On("IsOnline", mock.Anything, "b").Return(false, nil)
+		pc.On("AreOnline", mock.Anything, []string{"a", "b"}).Return(map[string]bool{"a": false, "b": false}, nil)
 
 		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "b", Limit: 2})
@@ -716,7 +722,7 @@ func TestService_Search(t *testing.T) {
 
 		summaries := []*Summary{makeSummary("c", "charlie")}
 		repo.On("Search", mock.Anything, "me", "c", "b", 11).Return(summaries, nil)
-		pc.On("IsOnline", mock.Anything, "c").Return(false, nil)
+		pc.On("AreOnline", mock.Anything, []string{"c"}).Return(map[string]bool{"c": false}, nil)
 
 		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "c", Cursor: "b", Limit: 10})
@@ -739,7 +745,7 @@ func TestService_Search(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, res.Data)
 		assert.Nil(t, res.NextCursor)
-		pc.AssertNotCalled(t, "IsOnline")
+		pc.AssertNotCalled(t, "AreOnline")
 	})
 
 	t.Run("limit=0 defaults to 20", func(t *testing.T) {
@@ -784,20 +790,20 @@ func TestService_Search(t *testing.T) {
 		assert.ErrorIs(t, err, dbErr)
 	})
 
-	t.Run("presence check error per user is silently ignored", func(t *testing.T) {
+	t.Run("presence check error → default to offline", func(t *testing.T) {
 		repo := new(mockRepo)
 		bc := new(mockBlockChecker)
 		pc := new(mockPresenceChecker)
 
 		summaries := []*Summary{makeSummary("a", "alice")}
 		repo.On("Search", mock.Anything, "me", "a", "", 11).Return(summaries, nil)
-		pc.On("IsOnline", mock.Anything, "a").Return(false, errors.New("redis timeout"))
+		pc.On("AreOnline", mock.Anything, []string{"a"}).Return((map[string]bool)(nil), errors.New("redis timeout"))
 
 		svc := newTestService(repo, bc, pc)
 		res, err := svc.Search(ctx, "me", &SearchQuery{Q: "a", Limit: 10})
 
 		require.NoError(t, err)
 		assert.Len(t, res.Data, 1)
-		assert.False(t, res.Data[0].IsOnline)
+		assert.False(t, res.Data[0].IsOnline, "defaults to offline when presence check fails")
 	})
 }

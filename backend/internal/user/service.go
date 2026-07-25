@@ -23,6 +23,7 @@ type BlockChecker interface {
 
 type PresenceChecker interface {
 	IsOnline(ctx context.Context, userID string) (bool, error)
+	AreOnline(ctx context.Context, userIDs []string) (map[string]bool, error)
 }
 
 // SessionRevoker revokes all active sessions for a user.
@@ -164,6 +165,8 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, request *Ch
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, userID string) error {
+	// Revoke sessions first so the user cannot refresh their way back in
+	// after the account row is deleted.
 	if s.sessionRevoker != nil {
 		if err := s.sessionRevoker.DeleteTokenByUserID(ctx, userID); err != nil {
 			logger.Error("user: failed to revoke sessions before account deletion",
@@ -244,12 +247,17 @@ func (s *Service) Search(ctx context.Context, userID string, query *SearchQuery)
 		nextCursor = &cursor
 	}
 
-	logger.Debug("debug summaries total", zap.Int("count", len(summaries)))
-
-	for i := range summaries {
-		online, err := s.presenceChecker.IsOnline(ctx, summaries[i].ID)
-		if err == nil {
-			summaries[i].IsOnline = online
+	if len(summaries) > 0 {
+		onlineMap, err := s.presenceChecker.AreOnline(ctx, summaryIDs(summaries))
+		if err != nil {
+			logger.Warn("user: presence check failed, defaulting to offline",
+				zap.String("query", query.Q),
+				zap.Error(err),
+			)
+		} else {
+			for i := range summaries {
+				summaries[i].IsOnline = onlineMap[summaries[i].ID]
+			}
 		}
 	}
 
@@ -262,4 +270,12 @@ func (s *Service) Search(ctx context.Context, userID string, query *SearchQuery)
 		Data:       summaries,
 		NextCursor: nextCursor,
 	}, nil
+}
+
+func summaryIDs(summaries []*Summary) []string {
+	ids := make([]string, len(summaries))
+	for i, s := range summaries {
+		ids[i] = s.ID
+	}
+	return ids
 }

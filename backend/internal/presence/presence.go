@@ -29,6 +29,29 @@ func (s *Store) SetOffline(ctx context.Context, userID string) error {
 	return s.rdb.Del(ctx, key(userID)).Err()
 }
 
+func (s *Store) AreOnline(ctx context.Context, userIDs []string) (map[string]bool, error) {
+	if len(userIDs) == 0 {
+		return map[string]bool{}, nil
+	}
+
+	keys := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		keys[i] = key(id)
+	}
+
+	vals, err := s.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]bool, len(userIDs))
+	for i, v := range vals {
+		result[userIDs[i]] = v != nil
+	}
+
+	return result, nil
+}
+
 func (s *Store) IsOnline(ctx context.Context, userID string) (bool, error) {
 	err := s.rdb.Get(ctx, key(userID)).Err()
 	if err == nil {
