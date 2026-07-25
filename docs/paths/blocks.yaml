@@ -29,8 +29,7 @@ paths:
                     items:
                       $ref: '../openapi.yaml#/components/schemas/BlockedUserResponse'
                   next_cursor:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
         "401":
           $ref: '../openapi.yaml#/components/responses/Unauthorized'
         "500":

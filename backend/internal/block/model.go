@@ -9,7 +9,7 @@ type Block struct {
 }
 
 type URIParams struct {
-	ID string `params:"id"`
+	ID string `uri:"id"`
 }
 
 type ListQuery struct {

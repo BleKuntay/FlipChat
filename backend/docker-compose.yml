@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: fc_app
     restart: unless-stopped
+    mem_limit: 256m
     ports:
       - "8080:8080"
     env_file:
@@ -12,11 +13,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
     container_name: fc_postgres
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: fc_user
       POSTGRES_PASSWORD: fc_password
@@ -32,5 +38,46 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:8-alpine
+    container_name: fc_redis
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass fc_password --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "fc_password", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  minio:
+    image: minio/minio:latest
+    container_name: fc_minio
+    mem_limit: 512m
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: fc_user
+      MINIO_ROOT_PASSWORD: fc_password
+    volumes:
+      - minio_data:/data
+    command: server --console-address ":9001" /data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres_data:
+  redis_data:
+    driver: local
+  minio_data:

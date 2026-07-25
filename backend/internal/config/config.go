@@ -24,9 +24,21 @@ type Config struct {
 	PostgresMaxOpenConn int
 	PostgresMaxIdleConn int
 
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+
+	PresenceTTL time.Duration
+
 	JWTSecret          string
 	AccessTokenExpiry  time.Duration
 	RefreshTokenExpiry time.Duration
+
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioBucket    string
+	MinioUseSSL    bool
 }
 
 var App *Config
@@ -44,6 +56,11 @@ func LoadConfig() {
 		refreshExpiry = 7 * 24 * time.Hour
 	}
 
+	presenceTTL, err := time.ParseDuration(getEnv("PRESENCE_TTL", "35s"))
+	if err != nil {
+		presenceTTL = 35 * time.Second
+	}
+
 	App = &Config{
 		AppPort:             getEnv("APP_PORT", "8080"),
 		AppEnv:              getEnv("APP_ENV", "development"),
@@ -56,9 +73,18 @@ func LoadConfig() {
 		PostgresSSLMode:     getEnv("POSTGRES_SSLMODE", "disable"),
 		PostgresMaxOpenConn: getEnvInt("POSTGRES_MAX_OPEN_CONNECTIONS", 25),
 		PostgresMaxIdleConn: getEnvInt("POSTGRES_MAX_IDLE_CONNECTION", 5),
+		RedisAddr:           getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:       getEnv("REDIS_PASSWORD", ""),
+		RedisDB:             getEnvInt("REDIS_DB", 0),
+		PresenceTTL:         presenceTTL,
 		JWTSecret:           getEnv("JWT_SECRET", ""),
 		AccessTokenExpiry:   accessExpiry,
 		RefreshTokenExpiry:  refreshExpiry,
+		MinioEndpoint:       getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey:      getEnv("MINIO_ACCESS_KEY", "fc_user"),
+		MinioSecretKey:      getEnv("MINIO_SECRET_KEY", "fc_password"),
+		MinioBucket:         getEnv("MINIO_BUCKET", "flip_chat"),
+		MinioUseSSL:         false,
 	}
 }
 

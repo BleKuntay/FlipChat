@@ -1,0 +1,5 @@
+rules:
+  operation-operationId: off
+  info-license: off
+  no-server-example.com: off
+  operation-2xx-response: off

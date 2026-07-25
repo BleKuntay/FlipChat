@@ -3,7 +3,9 @@ package conversation
 import (
 	"context"
 	"github.com/BleKuntay/FlipChat/backend/pkg/httputil"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
 	"github.com/gofiber/fiber/v3"
+	"go.uber.org/zap"
 )
 
 type ServiceInterface interface {
@@ -69,6 +71,12 @@ func (h *Handler) CreateConversation(c fiber.Ctx) error {
 		return httputil.ErrorStatus(c, err)
 	}
 	if created {
+		logger.Info("conversation: created",
+			zap.String("conversation_id", response.ConversationID),
+			zap.String("initiator_id", userID),
+			zap.String("partner_id", request.TargetUserID),
+		)
+
 		return c.Status(fiber.StatusCreated).JSON(response)
 	}
 

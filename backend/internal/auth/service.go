@@ -7,6 +7,8 @@ import (
 	"github.com/BleKuntay/FlipChat/backend/internal/config"
 	"github.com/BleKuntay/FlipChat/backend/internal/shared"
 	"github.com/BleKuntay/FlipChat/backend/pkg/jwt"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type RepositoryInterface interface {
@@ -90,7 +92,15 @@ func (s *Service) Register(ctx context.Context, request *RegisterRequest) (respo
 
 func (s *Service) Login(ctx context.Context, request *LoginRequest) (response *Response, refresh string, error error) {
 	user, err := s.repository.FindUserByEmail(ctx, request.Email)
-	if err != nil || user == nil {
+	if err != nil {
+		logger.Error("auth: FindUserByEmail failed during login",
+			zap.String("email", request.Email),
+			zap.Error(err),
+		)
+		shared.DummyVerify(request.Password)
+		return nil, "", ErrInvalidCredentials
+	}
+	if user == nil {
 		shared.DummyVerify(request.Password)
 		return nil, "", ErrInvalidCredentials
 	}

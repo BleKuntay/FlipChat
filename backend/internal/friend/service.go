@@ -6,6 +6,8 @@ import (
 	"errors"
 
 	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
+	"github.com/BleKuntay/FlipChat/backend/pkg/logger"
+	"go.uber.org/zap"
 )
 
 const defaultLimit = 20
@@ -142,7 +144,6 @@ func (s *Service) AddFriend(ctx context.Context, userID, targetID string) (*Pend
 
 	low, high := canonical(userID, targetID)
 
-	//   - conflict (sudah friends / sudah pernah request) → sql.ErrNoRows
 	record, err := s.repository.UpsertFriend(ctx, low, high, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -155,6 +156,12 @@ func (s *Service) AddFriend(ctx context.Context, userID, targetID string) (*Pend
 	if record.Status == StatusAccepted {
 		direction = "accepted"
 	}
+
+	logger.Info("friend: request sent or accepted",
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID),
+		zap.String("direction", direction),
+	)
 
 	return &PendingResponse{
 		UserID:    record.UserID,
@@ -181,7 +188,16 @@ func (s *Service) Unfriend(ctx context.Context, userID, targetID string) error {
 		return apperr.ErrNotFound
 	}
 
-	return s.repository.DeleteByPair(ctx, low, high)
+	if err := s.repository.DeleteByPair(ctx, low, high); err != nil {
+		return err
+	}
+
+	logger.Info("friend: unfriended",
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID),
+	)
+
+	return nil
 }
 
 func (s *Service) CancelFriendRequest(ctx context.Context, userID, targetID string) error {
@@ -205,7 +221,16 @@ func (s *Service) CancelFriendRequest(ctx context.Context, userID, targetID stri
 		return apperr.ErrForbidden
 	}
 
-	return s.repository.DeleteByPair(ctx, low, high)
+	if err := s.repository.DeleteByPair(ctx, low, high); err != nil {
+		return err
+	}
+
+	logger.Info("friend: request cancelled",
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID),
+	)
+
+	return nil
 }
 
 func (s *Service) AcceptFriendRequest(ctx context.Context, userID, targetID string) (*Response, error) {
@@ -237,6 +262,11 @@ func (s *Service) AcceptFriendRequest(ctx context.Context, userID, targetID stri
 		return nil, err
 	}
 
+	logger.Info("friend: request accepted",
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID),
+	)
+
 	return &Response{
 		UserID:      record.UserID,
 		Username:    record.Username,
@@ -263,7 +293,16 @@ func (s *Service) DeclineFriendRequest(ctx context.Context, userID, targetID str
 		return apperr.ErrForbidden
 	}
 
-	return s.repository.DeleteByPair(ctx, low, high)
+	if err := s.repository.DeleteByPair(ctx, low, high); err != nil {
+		return err
+	}
+
+	logger.Info("friend: request declined",
+		zap.String("user_id", userID),
+		zap.String("target_id", targetID),
+	)
+
+	return nil
 }
 
 func canonical(a, b string) (low, high string) {

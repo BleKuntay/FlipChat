@@ -100,9 +100,10 @@ func newTestApp(svc ServiceInterface) *fiber.App {
 	return app
 }
 
-func doRequest(app *fiber.App, method, url string) *http.Response {
+func doRequest(t *testing.T, app *fiber.App, method, url string) *http.Response {
 	req := httptest.NewRequest(method, url, nil)
-	resp, _ := app.Test(req)
+	resp, _ := app.Test(req) //nolint:bodyclose // closed via t.Cleanup below
+	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
 
@@ -139,7 +140,7 @@ func TestHandler_FindAll(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(app, http.MethodGet, "/friends/")
+			resp := doRequest(t, app, http.MethodGet, "/friends/") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
@@ -175,7 +176,7 @@ func TestHandler_ListRequests(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(app, http.MethodGet, "/friends/requests")
+			resp := doRequest(t, app, http.MethodGet, "/friends/requests") //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
@@ -249,7 +250,7 @@ func TestHandler_AddFriend(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(app, http.MethodPost, url)
+			resp := doRequest(t, app, http.MethodPost, url) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 
@@ -293,7 +294,7 @@ func TestHandler_Unfriend(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(app, http.MethodDelete, url)
+			resp := doRequest(t, app, http.MethodDelete, url) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
@@ -349,7 +350,7 @@ func TestHandler_AcceptFriendRequest(t *testing.T) {
 			}
 			app := newTestApp(svc)
 
-			resp := doRequest(app, http.MethodPut, url)
+			resp := doRequest(t, app, http.MethodPut, url) //nolint:bodyclose // body closed via t.Cleanup in helper
 
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})

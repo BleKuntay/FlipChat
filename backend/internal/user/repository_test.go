@@ -4,82 +4,17 @@ package user_test
 
 import (
 	"context"
-	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/BleKuntay/FlipChat/backend/pkg/apperr"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/BleKuntay/FlipChat/backend/internal/db/migration"
 	. "github.com/BleKuntay/FlipChat/backend/internal/user"
+	"github.com/BleKuntay/FlipChat/backend/pkg/testhelper"
 )
-
-// ── test setup ────────────────────────────────────────────────────────────────
-
-// newTestDB spins up a real PostgreSQL container, runs migrations,
-// and returns a ready-to-use *sqlx.DB. Container is terminated when test ends.
-func newTestDB(t *testing.T) *sqlx.DB {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("flipchat_test"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	require.NoError(t, err, "failed to start postgres container")
-
-	t.Cleanup(func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("warn: failed to terminate container: %v", err)
-		}
-	})
-
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	db, err := sqlx.Connect("postgres", dsn)
-	require.NoError(t, err, "failed to connect to test database")
-
-	t.Cleanup(func() { _ = db.Close() })
-
-	runMigrations(t, dsn)
-
-	return db
-}
-
-// runMigrations applies all UP migrations using the project's migration package.
-func runMigrations(t *testing.T, dsn string) {
-	t.Helper()
-
-	_, filename, _, _ := runtime.Caller(0)
-	migrationsPath := filepath.Join(filepath.Dir(filename), "..", "..", "db", "migrations")
-	migrationsPath = strings.ReplaceAll(migrationsPath, "\\", "/")
-
-	m, err := migration.NewMigrate(migration.MigrateConfig{
-		DBUrl:          dsn,
-		MigrationsPath: migrationsPath,
-	})
-	require.NoError(t, err, "failed to create migrator")
-
-	err = migration.RunMigrations(m)
-	require.NoError(t, err, "failed to run migrations")
-}
 
 // insertUser is a test helper that inserts a user directly via SQL
 // and returns the full User row (including DB-generated id, created_at, etc.)
@@ -107,7 +42,7 @@ func cleanUsers(t *testing.T, db *sqlx.DB) {
 // ── FindByID ──────────────────────────────────────────────────────────────────
 
 func TestRepository_FindByID(t *testing.T) {
-	db := newTestDB(t)
+	db := testhelper.NewTestDB(t)
 	repo := NewRepository(db)
 
 	ctx := context.Background()
@@ -158,7 +93,7 @@ func TestRepository_FindByID(t *testing.T) {
 // ── UpdateProfile ─────────────────────────────────────────────────────────────
 
 func TestRepository_UpdateProfile(t *testing.T) {
-	db := newTestDB(t)
+	db := testhelper.NewTestDB(t)
 	repo := NewRepository(db)
 
 	ctx := context.Background()
@@ -228,7 +163,7 @@ func TestRepository_UpdateProfile(t *testing.T) {
 // ── UpdateEmail ───────────────────────────────────────────────────────────────
 
 func TestRepository_UpdateEmail(t *testing.T) {
-	db := newTestDB(t)
+	db := testhelper.NewTestDB(t)
 	repo := NewRepository(db)
 
 	ctx := context.Background()
@@ -267,7 +202,7 @@ func TestRepository_UpdateEmail(t *testing.T) {
 // ── UpdatePassword ────────────────────────────────────────────────────────────
 
 func TestRepository_UpdatePassword(t *testing.T) {
-	db := newTestDB(t)
+	db := testhelper.NewTestDB(t)
 	repo := NewRepository(db)
 
 	ctx := context.Background()
@@ -285,20 +220,18 @@ func TestRepository_UpdatePassword(t *testing.T) {
 		assert.Equal(t, "new-hash", storedPassword)
 	})
 
-	// BUG DOCUMENTED: UpdatePassword does not check rows affected.
-	// Silent success even if user does not exist.
-	t.Run("non-existent ID does not return error (silent no-op)", func(t *testing.T) {
+	// FIXED: UpdatePassword now checks rows affected.
+	t.Run("non-existent ID returns ErrNotFound", func(t *testing.T) {
 		err := repo.UpdatePassword(ctx, "00000000-0000-0000-0000-000000000000", "new-hash")
 
-		// Currently: no error — to fix, check rows affected and return ErrUserNotFound
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 }
 
 // ── DeleteByID ────────────────────────────────────────────────────────────────
 
 func TestRepository_DeleteByID(t *testing.T) {
-	db := newTestDB(t)
+	db := testhelper.NewTestDB(t)
 	repo := NewRepository(db)
 
 	ctx := context.Background()
@@ -317,20 +250,18 @@ func TestRepository_DeleteByID(t *testing.T) {
 		assert.Equal(t, 0, count)
 	})
 
-	// BUG DOCUMENTED: DeleteByID does not check rows affected.
-	// Silent success even if user does not exist.
-	t.Run("non-existent ID does not return error (silent no-op)", func(t *testing.T) {
+	// FIXED: DeleteByID now checks rows affected.
+	t.Run("non-existent ID returns ErrNotFound", func(t *testing.T) {
 		err := repo.DeleteByID(ctx, "00000000-0000-0000-0000-000000000000")
 
-		// Currently: no error — to fix, check rows affected and return ErrUserNotFound
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, apperr.ErrNotFound)
 	})
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
 func TestRepository_Search(t *testing.T) {
-	db := newTestDB(t)
+	db := testhelper.NewTestDB(t)
 	repo := NewRepository(db)
 
 	ctx := context.Background()
