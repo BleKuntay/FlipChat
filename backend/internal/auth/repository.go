@@ -91,10 +91,10 @@ func (r *Repository) SaveRefreshToken(ctx context.Context, token RefreshToken) e
 		return apperr.ErrBadRequest
 	}
 
-	pipe := r.rdb.Pipeline()
+	pipe := r.rdb.TxPipeline()
 	pipe.Set(ctx, tokenKey(token.Token), token.UserID, ttl)
 	pipe.SAdd(ctx, userTokensKey(token.UserID), token.Token)
-	pipe.Expire(ctx, tokenKey(token.Token), ttl)
+	pipe.Expire(ctx, userTokensKey(token.UserID), ttl)
 
 	_, err := pipe.Exec(ctx)
 	return err
@@ -130,7 +130,7 @@ func (r *Repository) DeleteTokenByToken(ctx context.Context, token string) error
 		return err
 	}
 
-	pipe := r.rdb.Pipeline()
+	pipe := r.rdb.TxPipeline()
 	pipe.Del(ctx, tokenKey(token))
 	pipe.SRem(ctx, userTokensKey(userID), token)
 
@@ -147,7 +147,7 @@ func (r *Repository) DeleteTokenByUserID(ctx context.Context, userID string) err
 		return nil
 	}
 
-	pipe := r.rdb.Pipeline()
+	pipe := r.rdb.TxPipeline()
 	for _, token := range tokens {
 		pipe.Del(ctx, tokenKey(token))
 	}
