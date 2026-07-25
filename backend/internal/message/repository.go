@@ -72,7 +72,7 @@ func (r *Repository) EditMessage(ctx context.Context, message *Message) error {
 	q := `
 		UPDATE messages
 		SET content = $1, is_edited = true, updated_at = $2
-		WHERE id = $3
+		WHERE id = $3 AND deleted_at IS NULL
 	`
 
 	res, err := r.db.ExecContext(ctx, q, message.Content, message.UpdatedAt, message.ID)
@@ -95,7 +95,7 @@ func (r *Repository) Delete(ctx context.Context, message *Message) error {
 	q := `
 		UPDATE messages
 		SET content = NULL, deleted_at = $1, deleted_by = $2
-		WHERE id = $3
+		WHERE id = $3 AND deleted_at IS NULL
 	`
 
 	res, err := r.db.ExecContext(ctx, q, message.DeletedAt, message.DeletedBy, message.ID)
@@ -115,7 +115,7 @@ func (r *Repository) Delete(ctx context.Context, message *Message) error {
 }
 
 func (r *Repository) MarkAsRead(ctx context.Context, message *Message) error {
-	q := "UPDATE messages SET read_at = $1 WHERE id = $2"
+	q := "UPDATE messages SET read_at = $1 WHERE id = $2 AND read_at IS NULL AND deleted_at IS NULL"
 
 	res, err := r.db.ExecContext(ctx, q, message.ReadAt, message.ID)
 	if err != nil {
