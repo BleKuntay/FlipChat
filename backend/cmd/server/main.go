@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/BleKuntay/FlipChat/backend/internal/attachment"
 	"github.com/BleKuntay/FlipChat/backend/internal/auth"
 	"github.com/BleKuntay/FlipChat/backend/internal/block"
@@ -25,6 +26,10 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
@@ -45,14 +50,30 @@ func main() {
 	app := setupApp()
 	registerRoutes(app, db, redisClient, minioClient)
 
-	logger.Info("server starting",
-		zap.String("env", config.App.AppEnv),
-		zap.String("port", config.App.AppPort),
-	)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	if err := app.Listen(":" + config.App.AppPort); err != nil {
-		logger.Fatal("server failed to start", zap.Error(err))
+	go func() {
+		logger.Info("server starting",
+			zap.String("env", config.App.AppEnv),
+			zap.String("port", config.App.AppPort),
+		)
+		if err := app.Listen(":" + config.App.AppPort); err != nil {
+			logger.Fatal("server failed to start", zap.Error(err))
+		}
+	}()
+
+	<-ctx.Done()
+	logger.Info("shutdown signal received, starting graceful termination...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+		logger.Fatal("server forced to shutdown due to error", zap.Error(err))
 	}
+
+	logger.Info("server stopped gracefully")
 }
 
 func registerRoutes(app *fiber.App, db *sqlx.DB, redisClient *redis.Client, minioClient *minio.Client) {
